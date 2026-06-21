@@ -24,13 +24,12 @@ dev = [
     "black>=24.0",
 ]
 
-# CLI console script is wired up in Phase 3 (cli/main.py).
-# [project.scripts]
-# data360-autodoc = "cli.main:cli"
+[project.scripts]
+data360-autodoc = "cli.main:cli"
 
 [tool.setuptools]
 py-modules = ["models"]
-packages = ["fetcher"]
+packages = ["fetcher", "generator", "cli"]
 
 [tool.black]
 line-length = 88
