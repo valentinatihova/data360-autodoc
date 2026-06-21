@@ -1,9 +1,0 @@
-click>=8.1
-PyJWT>=2.8
-cryptography>=42.0
-requests>=2.31
-
-[dev]
-pytest>=8.0
-responses>=0.25
-black>=24.0
