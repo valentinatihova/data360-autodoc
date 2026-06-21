@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: data360-autodoc
+Version: 0.1.0
+Summary: Auto-generate human-readable documentation for Salesforce Data 360 orgs.
+Author: data360-autodoc contributors
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: click>=8.1
+Requires-Dist: PyJWT>=2.8
+Requires-Dist: cryptography>=42.0
+Requires-Dist: requests>=2.31
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: responses>=0.25; extra == "dev"
+Requires-Dist: black>=24.0; extra == "dev"

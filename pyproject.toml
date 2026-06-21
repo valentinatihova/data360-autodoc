@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data360-autodoc"
+version = "0.1.0"
+description = "Auto-generate human-readable documentation for Salesforce Data 360 orgs."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "data360-autodoc contributors" }]
+dependencies = [
+    "click>=8.1",
+    "PyJWT>=2.8",
+    "cryptography>=42.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "responses>=0.25",
+    "black>=24.0",
+]
+
+# CLI console script is wired up in Phase 3 (cli/main.py).
+# [project.scripts]
+# data360-autodoc = "cli.main:cli"
+
+[tool.setuptools]
+py-modules = ["models"]
+packages = ["fetcher"]
+
+[tool.black]
+line-length = 88
+target-version = ["py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
