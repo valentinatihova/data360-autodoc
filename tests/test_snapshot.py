@@ -18,10 +18,14 @@ from models import (
     CalculatedInsight,
     DataLakeObject,
     DataModelObject,
+    DataStream,
+    DmoFieldMapping,
     FieldDef,
+    FieldMapping,
     IdentityResolutionRuleset,
     Mapping,
     OrgSchema,
+    Relationship,
 )
 
 FIXED_TS = datetime(2026, 6, 21, 17, 30, 0, tzinfo=timezone.utc)
@@ -148,3 +152,140 @@ def test_two_snapshots_diff_for_drift() -> None:
         d.name for d in loaded_before.dmos
     }
     assert new_names == {"Account__dmo"}
+
+
+def test_streams_round_trip() -> None:
+    schema = OrgSchema(
+        org_name="Acme",
+        instance_url="https://acme.my.salesforce.com",
+        generated_at=FIXED_TS,
+        streams=(
+            DataStream(
+                name="Account_CRM_Stream",
+                dlo_name="Account_CRM__dll",
+                dlo_label="Account_CRM",
+                data_source="Salesforce CRM",
+                category="Profile",
+                event_time_field="CreatedDate",
+                primary_keys=("Id",),
+                formula_fields=("FullName",),
+                formula_calculations=("First + Last",),
+                refresh_mode="UPSERT",
+                schedule_frequency="BATCH",
+                de_extraction_mode="INCREMENTAL",
+                org_unit_identifier="OU-1",
+            ),
+        ),
+    )
+    assert load_json(render_json(schema)) == schema
+
+
+def test_field_mappings_round_trip() -> None:
+    schema = OrgSchema(
+        org_name="Acme",
+        instance_url="https://acme.my.salesforce.com",
+        generated_at=FIXED_TS,
+        field_mappings=(
+            FieldMapping(
+                stream_name="Account_CRM",
+                source_field="SLASerialNumber__c",
+                dlo_field_label="SLA Serial Number",
+                dlo_field_name="SLASerialNumber_c",
+                data_type="Text",
+                is_primary_key=False,
+                is_foreign_key=False,
+                data_source="SalesforceDotCom",
+            ),
+            FieldMapping(
+                stream_name="Account_CRM",
+                source_field=None,
+                dlo_field_label="KQ_Id",
+                dlo_field_name="KQ_Id",
+                data_type="Text",
+                is_foreign_key=True,
+                data_source="SalesforceDotCom",
+            ),
+        ),
+    )
+    assert load_json(render_json(schema)) == schema
+
+
+def test_dmo_field_mappings_round_trip() -> None:
+    schema = OrgSchema(
+        org_name="Acme",
+        instance_url="https://acme.my.salesforce.com",
+        generated_at=FIXED_TS,
+        dmo_field_mappings=(
+            DmoFieldMapping(
+                source_dlo_name="Account_CRM__dll",
+                source_dlo_label="Account_CRM",
+                source_field_name="Id_c",
+                source_field_label="Id_c",
+                target_dmo_name="ssot__Account__dlm",
+                target_dmo_label="Account",
+                target_field_name="ssot__Id__c",
+                target_field_label="ssot__Id__c",
+                data_source_field="category.text",
+            ),
+        ),
+        relationships=(
+            Relationship(
+                source_dmo_name="ssot__ContactPointEmail__dlm",
+                source_dmo_label="Contact Point Email",
+                source_field="ssot__PartyId__c",
+                cardinality="N:1",
+                related_entity="ssot__Individual__dlm",
+                related_field="ssot__Id__c",
+                relationship_label="CPEToIndividual",
+                status="INACTIVE",
+            ),
+            Relationship(
+                source_dmo_name="ssot__Account__dlm",
+                source_dmo_label="Account",
+                source_field="ssot__Id__c",
+            ),
+        ),
+    )
+    assert load_json(render_json(schema)) == schema
+
+
+def test_field_type_inferred_round_trip() -> None:
+    schema = OrgSchema(
+        org_name="Acme",
+        instance_url="https://acme.my.salesforce.com",
+        generated_at=FIXED_TS,
+        dmos=(
+            DataModelObject(
+                name="ssot__Account__dlm",
+                label="Account",
+                fields=(
+                    FieldDef(
+                        name="ssot__Revenue__c", type="Number", type_inferred=True
+                    ),
+                ),
+            ),
+        ),
+    )
+    assert load_json(render_json(schema)) == schema
+
+
+def test_field_mapping_dlo_name_and_nullable_round_trip() -> None:
+    schema = OrgSchema(
+        org_name="Acme",
+        instance_url="https://acme.my.salesforce.com",
+        generated_at=FIXED_TS,
+        field_mappings=(
+            FieldMapping(
+                stream_name="Account_CRM",
+                source_field="Id",
+                dlo_field_label="Account ID",
+                dlo_field_name="Id",
+                data_type="Text",
+                is_primary_key=True,
+                data_source="SalesforceDotCom",
+                dlo_name="Account_CRM__dll",
+                nullable=False,
+            ),
+        ),
+    )
+    assert load_json(render_json(schema)) == schema
