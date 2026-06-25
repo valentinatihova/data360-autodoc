@@ -6,10 +6,11 @@
 
 **Auto-generate human-readable documentation for Salesforce Data 360 (Data Cloud) orgs — in seconds, not days.**
 
-Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, keys), an ERD of your DLO → DMO mappings, and a deterministic JSON snapshot.
+Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, keys), the data streams and field-level mappings behind them, the DMO relationship graph, an ERD, and a deterministic JSON snapshot.
 
 - 📓 **Data dictionary** — every DMO and DLO as clean Markdown tables, with field names, types, and keys.
-- 🔗 **ERD diagram** — a Mermaid `graph LR` of how your Data Lake Objects map into Data Model Objects.
+- 🌊 **Data streams + field mappings** — per-stream source/refresh metadata, the Stream → DLO field map, and the DLO → DMO field map (with real labels, not just API names).
+- 🔗 **Relationships + ERD** — DMO-to-DMO relationships with cardinality and status, plus a Mermaid graph of DLO → DMO mappings and relationship edges.
 - 🧊 **JSON snapshot** — a deterministic, diff-friendly export of your whole org schema (the foundation for drift detection — see below).
 
 ## For who
@@ -59,7 +60,7 @@ Authentication uses the **OAuth 2.0 JWT Bearer flow** (connected app + private k
 
 ### Example output
 
-The Markdown data dictionary (DMO field types come from the org's relationships metadata; DLO keys from the data streams):
+The Markdown data dictionary. DMO field types come from the org's relationships metadata, and fall back to the mapped DLO field type when the DMO endpoint returns a generic type (shown as `(via DLO)`); DLO keys come from the data streams:
 
 ```markdown
 ## Data Model Objects (DMOs)
@@ -81,20 +82,36 @@ The Markdown data dictionary (DMO field types come from the org's relationships 
 | OrderId | Text | PrimaryKey |
 ```
 
-The ERD (renders natively in GitHub):
+Beyond the dictionary, the document includes (in this order):
+
+- **Data Streams** — one row per stream: data source, category, primary key, schedule, refresh mode.
+- **Field Mapping (Streams → DLO)** — every Data Lake field with its source field, DLO label, type, and a `KQ_`-prefix foreign-key flag.
+- **DLO → DMO Field Mappings** — field-level source → target mappings, grouped by DLO → DMO pairing, with real labels joined from DLO metadata.
+- **Relationships** — DMO-to-DMO links with cardinality and status (inactive standard relationships stay visible, never dropped):
+
+```markdown
+## Relationships
+
+| Object | Field | Cardinality | Related Object | Related Field | Status |
+| --- | --- | --- | --- | --- | --- |
+| Account | ssot__PrimarySalesContactPointId__c | N:1 | ssot__ContactPointEmail__dlm | ssot__Id__c | INACTIVE |
+```
+
+The ERD (renders natively in GitHub). Solid arrows are DLO → DMO mappings; dashed, cardinality-labeled arrows are active DMO → DMO relationships:
 
 ```mermaid
 graph LR
   Order_Home__dll["Order (Home)"]
   Individual__dmo["Individual"]
   Order_Home__dll --> Individual__dmo
+  ContactPointEmail__dlm["Contact Point Email"] -.->|N:1| Individual__dmo
 ```
 
 Output is **deterministic** — the same org always produces byte-identical docs (collections are sorted alphabetically). That makes the output safe to commit and easy to diff.
 
 ### What it reads — and what it doesn't yet
 
-Under the hood it calls the **Data 360 Connect REST API** (`/services/data/v…/ssot/*`): `data-model-objects` (DMOs), `data-model-object-mappings` (DLO→DMO mappings + field names), `…/{dmo}/relationships` (real DMO field types), and `data-streams` (DLOs + their fields, including primary keys). Full request/response shapes are in [`agent_docs/api_reference.md`](agent_docs/api_reference.md).
+Under the hood it calls the **Data 360 Connect REST API** (`/services/data/v…/ssot/*`): `data-model-objects` (DMOs), `data-model-object-mappings` (DLO→DMO mappings + field names), `…/{dmo}/relationships` (DMO field types **and** the DMO-to-DMO relationship graph), and `data-streams` (DLOs + their fields + the per-stream and field-level mappings, including primary keys). Full request/response shapes are in [`agent_docs/api_reference.md`](agent_docs/api_reference.md).
 
 **Not supported yet.** Calculated Insights and Identity Resolution rulesets are **not fetched** — those sections render as empty placeholders (e.g. `_No Calculated Insights found._`) and the `Identity Rulesets` count stays `0`. Documenting them is on the roadmap. (Profile and Engagement DMOs *are* covered — those are DMO categories, not separate entities.)
 
