@@ -8,7 +8,7 @@
 
 Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, keys), an ERD of your DLO → DMO mappings, and a deterministic JSON snapshot.
 
-- 📓 **Data dictionary** — every DMO, DLO, Calculated Insight, and Identity Resolution ruleset as clean Markdown tables.
+- 📓 **Data dictionary** — every DMO and DLO as clean Markdown tables, with field names, types, and keys.
 - 🔗 **ERD diagram** — a Mermaid `graph LR` of how your Data Lake Objects map into Data Model Objects.
 - 🧊 **JSON snapshot** — a deterministic, diff-friendly export of your whole org schema (the foundation for drift detection — see below).
 
@@ -34,10 +34,17 @@ data360-autodoc generate \
 Wrote acme-data-cloud.md
 Wrote acme-data-cloud.mmd
 Wrote acme-data-cloud.json
-Generated docs for 12 DMOs, 8 DLOs, 3 Identity Rulesets
+Generated docs for 24 DMOs, 11 DLOs, 0 Identity Rulesets
 ```
 
-Authentication uses the **OAuth 2.0 JWT Bearer flow** (connected app + private key — no passwords stored). Add `--sandbox` for sandbox / scratch orgs.
+Authentication uses the **OAuth 2.0 JWT Bearer flow** (connected app + private key — no passwords stored).
+
+**Options that affect the metadata fetch:**
+
+- `--sandbox` — authenticate against `test.salesforce.com` (sandbox / scratch orgs).
+- `--api-version` — the Salesforce REST API version used for the `/ssot/*` metadata calls (e.g. `v62.0`). **By default the tool auto-detects your org's highest supported version** (from `GET /services/data/`), so you normally don't set this. Force it only if auto-detection picks a version where a Data Cloud endpoint misbehaves, or to pin output to a specific version. It must be a valid Salesforce REST API version your org supports.
+
+(The `Identity Rulesets` count is currently always `0` — see "Not supported yet" below.)
 
 ## What you get
 
@@ -52,9 +59,18 @@ Authentication uses the **OAuth 2.0 JWT Bearer flow** (connected app + private k
 
 ### Example output
 
-The Markdown data dictionary:
+The Markdown data dictionary (DMO field types come from the org's relationships metadata; DLO keys from the data streams):
 
 ```markdown
+## Data Model Objects (DMOs)
+
+### Individual (`Individual__dmo`)
+
+| Name | Type | Key |
+| --- | --- | --- |
+| Email__c | EmailAddress |  |
+| Id__c | Text |  |
+
 ## Data Lake Objects (DLOs)
 
 ### Order (Home) (`Order_Home__dll`)
@@ -75,6 +91,14 @@ graph LR
 ```
 
 Output is **deterministic** — the same org always produces byte-identical docs (collections are sorted alphabetically). That makes the output safe to commit and easy to diff.
+
+### What it reads — and what it doesn't yet
+
+Under the hood it calls the **Data 360 Connect REST API** (`/services/data/v…/ssot/*`): `data-model-objects` (DMOs), `data-model-object-mappings` (DLO→DMO mappings + field names), `…/{dmo}/relationships` (real DMO field types), and `data-streams` (DLOs + their fields, including primary keys). Full request/response shapes are in [`agent_docs/api_reference.md`](agent_docs/api_reference.md).
+
+**Not supported yet.** Calculated Insights and Identity Resolution rulesets are **not fetched** — those sections render as empty placeholders (e.g. `_No Calculated Insights found._`) and the `Identity Rulesets` count stays `0`. Documenting them is on the roadmap. (Profile and Engagement DMOs *are* covered — those are DMO categories, not separate entities.)
+
+**Resilient by default.** If one DMO's metadata can't be read, that DMO is skipped with a warning and the rest of the document is still produced. If the org has more than 500 DMOs, the list is capped (with a warning). A failure fetching the DMO list or the data streams stops the run with a clean one-line error — never a stack trace.
 
 ## Future: drift monitoring (paid tier)
 

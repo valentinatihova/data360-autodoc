@@ -30,3 +30,15 @@ htmlcov/
 *.swp
 .idea/
 .vscode/
+
+# Generated documentation output (CLI artifacts)
+out/
+# Local prototype / analysis artifacts (not part of the shipped tool)
+output/
+
+# Local assistant config (kept on disk, never tracked)
+CLAUDE.md
+
+# Untracked working notes / AI-authored drafts (kept on disk, never tracked)
+TODO_DRIFT.md
+marketing/
