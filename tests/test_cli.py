@@ -151,3 +151,46 @@ def test_snapshot_round_trips_from_written_file(key_file: str, tmp_path: Path) -
     schema = load_json((out / "acme-data-cloud.json").read_text(encoding="utf-8"))
     assert schema.org_name == "Acme Data Cloud"
     assert [d.name for d in schema.dmos] == ["Individual__dmo"]
+
+
+def test_access_token_skips_jwt_auth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # With --access-token, JWT auth must be skipped entirely.
+    def _no_auth(**kwargs):
+        raise AssertionError("get_access_token must not run with --access-token")
+
+    monkeypatch.setattr(cli_main, "get_access_token", _no_auth)
+    out = tmp_path / "tok"
+    result = CliRunner().invoke(
+        cli_main.cli,
+        [
+            "generate",
+            "--instance-url",
+            "https://acme.my.salesforce.com",
+            "--access-token",
+            "PRE-OBTAINED-TOKEN",
+            "--output",
+            str(out),
+            "--format",
+            "json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert (out / "acme-data-cloud.json").exists()
+
+
+def test_missing_auth_args_errors(tmp_path: Path) -> None:
+    # Neither --access-token nor the JWT trio -> usage error.
+    result = CliRunner().invoke(
+        cli_main.cli,
+        [
+            "generate",
+            "--instance-url",
+            "https://acme.my.salesforce.com",
+            "--output",
+            str(tmp_path),
+        ],
+    )
+    assert result.exit_code != 0
+    assert "access-token" in result.output

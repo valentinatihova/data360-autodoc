@@ -1,85 +1,240 @@
-"""Data Stream / DLO schema fetcher.
+"""Data Stream / Data Lake Object fetcher.
 
-Retrieves the field-level schema for a single Data Lake Object from
-``GET {instance_url}/services/data/v62.0/ssot/metadata/dlo/{name}`` and returns
-a tuple of :class:`~models.FieldDef`. This is the per-DLO detail view (name,
-type, keyQualifier) used to enrich the catalog produced by
-:mod:`fetcher.metadata`.
+DLOs, Data Stream metadata, and field-mapping rows all come from a single
+``/ssot/data-streams`` response. :func:`fetch_dlos_and_streams` returns all
+three from **one** pass so the orchestrator hits the (slow) endpoint only once.
+
+See ``agent_docs/api_reference.md`` for the verified response shape.
 """
 
 from __future__ import annotations
 
-import time
-from typing import Any, Final
+from typing import Any
 
-import requests
+from fetcher._http import FetchError, iter_pages
+from models import DataLakeObject, DataStream, FieldDef, FieldMapping
 
-from models import FieldDef
-
-#: Salesforce Data API version used for the SSOT metadata endpoint.
-API_VERSION: Final = "v62.0"
-_MAX_ATTEMPTS: Final = 3
-_BACKOFF_BASE_SECONDS: Final = 1.0
+#: Connector-name lookup order, shared by stream + field-mapping rows.
+_CONNECTOR_KEYS = ("connectorName", "name", "label", "displayName", "connectorType")
 
 
 class StreamsError(RuntimeError):
-    """Raised when a DLO schema cannot be retrieved."""
+    """Raised when Data Streams / DLOs cannot be retrieved."""
 
 
-def fetch_dlo_schema(
-    *,
-    instance_url: str,
-    access_token: str,
-    dlo_name: str,
-    timeout: float = 30.0,
-) -> tuple[FieldDef, ...]:
-    """Fetch the field schema for a single DLO.
-
-    Retries transient transport errors and 5xx responses up to three times with
-    exponential backoff (1s, 2s, 4s). The returned fields are sorted
-    alphabetically for deterministic output.
-
-    Args:
-        instance_url: Base URL of the Salesforce org.
-        access_token: OAuth bearer token.
-        dlo_name: API name of the DLO (e.g. ``Order_Home__dll``).
-        timeout: Per-request timeout in seconds.
+def fetch_dlos_and_streams(
+    *, instance_url: str, access_token: str, api_version: str, timeout: float = 60.0
+) -> tuple[
+    tuple[DataLakeObject, ...], tuple[DataStream, ...], tuple[FieldMapping, ...]
+]:
+    """Fetch DLOs, Data Stream rows, and field-mapping rows in a single pass.
 
     Returns:
-        A tuple of :class:`~models.FieldDef`, sorted by field name.
+        ``(dlos, streams, field_mappings)`` — all from one pass over
+        ``/ssot/data-streams``.
 
     Raises:
-        StreamsError: On a 4xx response or after exhausting retries.
+        StreamsError: If the data-streams request fails.
     """
-    base = instance_url.rstrip("/")
-    url = f"{base}/services/data/{API_VERSION}/ssot/metadata/dlo/{dlo_name}"
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    last_error: str | None = None
-    for attempt in range(_MAX_ATTEMPTS):
-        try:
-            response = requests.get(url, headers=headers, timeout=timeout)
-        except requests.RequestException as exc:
-            last_error = str(exc)
-        else:
-            if response.status_code == 200:
-                return _parse_schema(response.json())
-            if 400 <= response.status_code < 500:
-                raise StreamsError(
-                    f"DLO schema request rejected for {dlo_name!r} "
-                    f"({response.status_code}): {response.text}"
-                )
-            last_error = f"HTTP {response.status_code}: {response.text}"
-        if attempt < _MAX_ATTEMPTS - 1:
-            time.sleep(_BACKOFF_BASE_SECONDS * (2**attempt))
-
-    raise StreamsError(
-        f"DLO schema request for {dlo_name!r} failed after "
-        f"{_MAX_ATTEMPTS} attempts: {last_error}"
+    raw = _iter_raw_streams(
+        instance_url=instance_url,
+        access_token=access_token,
+        api_version=api_version,
+        timeout=timeout,
+    )
+    return (
+        _build_dlos(raw),
+        tuple(_parse_stream(s) for s in raw),
+        _build_field_mappings(raw),
     )
 
 
-def _parse_schema(payload: dict[str, Any]) -> tuple[FieldDef, ...]:
-    """Normalize a raw DLO-schema response into sorted :class:`FieldDef`s."""
-    fields = (FieldDef.from_api(f) for f in payload.get("fields", []))
-    return tuple(sorted(fields, key=lambda fd: fd.name.lower()))
+def _iter_raw_streams(
+    *, instance_url: str, access_token: str, api_version: str, timeout: float
+) -> list[dict[str, Any]]:
+    """Fetch every raw data-stream dict (paginated). Shared by both builders."""
+    base = instance_url.rstrip("/")
+    first_url = f"{base}/services/data/{api_version}/ssot/data-streams"
+    raw: list[dict[str, Any]] = []
+    try:
+        for page in iter_pages(
+            first_url, base_url=base, access_token=access_token, timeout=timeout
+        ):
+            for stream in page.get("dataStreams", []):
+                if isinstance(stream, dict):
+                    raw.append(stream)
+    except FetchError as exc:
+        raise StreamsError(str(exc)) from exc
+    return raw
+
+
+def _build_dlos(raw_streams: list[dict[str, Any]]) -> tuple[DataLakeObject, ...]:
+    """Build de-duplicated DLOs from raw streams (first occurrence wins)."""
+    by_name: dict[str, DataLakeObject] = {}
+    for stream in raw_streams:
+        dlo_info = stream.get("dataLakeObjectInfo")
+        if not isinstance(dlo_info, dict):
+            continue
+        name = dlo_info.get("name")
+        if not name or name in by_name:
+            continue
+        by_name[name] = _parse_dlo(dlo_info)
+    return tuple(by_name.values())
+
+
+def _parse_dlo(dlo_info: dict[str, Any]) -> DataLakeObject:
+    """Build a DataLakeObject from a stream's ``dataLakeObjectInfo`` block."""
+    name = dlo_info["name"]
+    label = dlo_info.get("label") or name
+    raw_fields = dlo_info.get("dataLakeFieldInfoRepresentation", []) or []
+    fields = tuple(
+        sorted(
+            (_parse_field(f) for f in raw_fields),
+            key=lambda fd: fd.name.lower(),
+        )
+    )
+    return DataLakeObject(name=name, label=label, fields=fields)
+
+
+def _parse_field(f: dict[str, Any]) -> FieldDef:
+    """Build a FieldDef from a ``dataLakeFieldInfoRepresentation`` entry."""
+    is_key = f.get("isPrimaryKey") is True
+    return FieldDef(
+        name=f["name"],
+        type=f.get("dataType", "Unknown"),
+        is_key=is_key,
+        key_qualifier="PrimaryKey" if is_key else None,
+    )
+
+
+def _parse_stream(stream: dict[str, Any]) -> DataStream:
+    """Build a DataStream row from one raw stream dict (mirrors the SI Apex)."""
+    dlo_info = stream.get("dataLakeObjectInfo") or {}
+    raw_fields = dlo_info.get("dataLakeFieldInfoRepresentation") or []
+
+    pks: list[str] = []
+    formula_fields: list[str] = []
+    formula_calcs: list[str] = []
+    for f in raw_fields:
+        if not isinstance(f, dict):
+            continue
+        fname = f.get("name")
+        if not fname:
+            continue
+        if f.get("isPrimaryKey") is True:
+            pks.append(fname)
+        if f.get("isFormula") is True or f.get("formula") is not None:
+            formula_fields.append(fname)
+            calc = f.get("formula") or f.get("calculation") or f.get("expression")
+            formula_calcs.append("" if calc is None else str(calc))
+
+    connector = stream.get("connectorInfo") or {}
+    refresh = stream.get("refreshConfig") or {}
+    adv = stream.get("advancedAttributes") or {}
+
+    return DataStream(
+        name=_first(stream, ("name", "label", "displayName", "developerName")) or "",
+        dlo_name=dlo_info.get("name") or "",
+        dlo_label=dlo_info.get("label") or dlo_info.get("name") or "",
+        data_source=_first(connector, _CONNECTOR_KEYS),
+        category=dlo_info.get("category"),
+        event_time_field=dlo_info.get("eventDateTimeFieldName"),
+        primary_keys=tuple(pks),
+        formula_fields=tuple(formula_fields),
+        formula_calculations=tuple(formula_calcs),
+        org_unit_identifier=(
+            dlo_info.get("organizationUnitIdentifier")
+            or adv.get("organizationUnitIdentifier")
+        ),
+        schedule_frequency=_frequency(refresh),
+        refresh_mode=refresh.get("refreshMode"),
+        de_extraction_mode=_first(
+            adv, ("dataExtensionExtractionMode", "extractionMode")
+        ),
+    )
+
+
+def _build_field_mappings(
+    raw_streams: list[dict[str, Any]],
+) -> tuple[FieldMapping, ...]:
+    """Build Sheet 2 rows: one per DLO field, with its source mapping.
+
+    ``source_field`` is recovered from ``stream.sourceFields`` by matching the
+    DLO field name to the source name with ``__`` collapsed to ``_`` (Data
+    Cloud's field-naming rule, mirroring the SI Apex). System fields (``KQ_``,
+    ``cdp_sys_``, …) have no source and stay blank. ``is_foreign_key`` is the
+    ``KQ_``-prefix heuristic.
+    """
+    rows: list[FieldMapping] = []
+    for stream in raw_streams:
+        dlo_info = stream.get("dataLakeObjectInfo")
+        if not isinstance(dlo_info, dict):
+            continue
+        stream_name = (
+            _first(stream, ("name", "label", "displayName", "developerName")) or ""
+        )
+        data_source = _first(stream.get("connectorInfo") or {}, _CONNECTOR_KEYS)
+
+        # source name keyed by its DLO-normalized form (`__` -> `_`).
+        source_by_dlo_name: dict[str, str] = {}
+        for sf in stream.get("sourceFields") or []:
+            if isinstance(sf, dict):
+                src = sf.get("name")
+                if src:
+                    source_by_dlo_name[src.replace("__", "_")] = src
+
+        dlo_name = dlo_info.get("name") or ""
+        for f in dlo_info.get("dataLakeFieldInfoRepresentation") or []:
+            if not isinstance(f, dict):
+                continue
+            fname = f.get("name")
+            if not fname:
+                continue
+            rows.append(
+                FieldMapping(
+                    stream_name=stream_name,
+                    source_field=source_by_dlo_name.get(fname),
+                    dlo_field_label=f.get("label") or fname,
+                    dlo_field_name=fname,
+                    data_type=f.get("dataType", "Unknown"),
+                    is_primary_key=f.get("isPrimaryKey") is True,
+                    is_foreign_key=fname.startswith("KQ_"),
+                    data_source=data_source,
+                    dlo_name=dlo_name,
+                    nullable=_nullable(f),
+                )
+            )
+    return tuple(rows)
+
+
+def _nullable(f: dict[str, Any]) -> bool | None:
+    """Read nullability from a field rep if the source exposes it, else None.
+
+    ``/ssot/data-streams`` for file/CRM streams in the verified org does not
+    return a nullability attribute, so this is ``None`` (rendered blank). We
+    still read the known key spellings so that any org which *does* expose it
+    populates the column without code changes — we never assume a default.
+    """
+    for key in ("nullable", "isNullable", "nillable"):
+        v = f.get(key)
+        if isinstance(v, bool):
+            return v
+    return None
+
+
+def _first(d: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    """Return the first non-empty value among ``keys`` as a string, else None."""
+    for k in keys:
+        v = d.get(k)
+        if v not in (None, ""):
+            return str(v)
+    return None
+
+
+def _frequency(refresh: dict[str, Any]) -> str | None:
+    """Extract a schedule frequency from ``refreshConfig.frequency``."""
+    freq = refresh.get("frequency")
+    if isinstance(freq, dict):
+        ftype = freq.get("frequencyType")
+        return str(ftype) if ftype is not None else None
+    return str(freq) if freq is not None else None

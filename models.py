@@ -5,16 +5,16 @@ These dataclasses are the single source of truth that flows from the fetchers
 deliberately framework-free so they can be serialized, diffed, and snapshot
 tested.
 
-The shapes here mirror the (currently mocked) API responses documented in
-``agent_docs/api_reference.md``. When real org payloads become available, adjust
-the ``from_api`` helpers rather than the consumers downstream.
+Construction lives in the fetchers (which know the real Data 360 Connect REST
+API shapes — see ``agent_docs/api_reference.md``); the only assembly helper here
+is :meth:`OrgSchema.build`, which sorts every collection so the same org always
+produces byte-identical output (the project's determinism guarantee).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -25,31 +25,18 @@ class FieldDef:
         name: API/developer name of the field.
         type: Data type as reported by the org (e.g. ``Text``, ``Number``).
         is_key: Whether the field participates in the object's primary key.
-        key_qualifier: Optional key-qualifier label (DLO schema only); ``None``
-            when the field is not a key or the API did not supply one.
+        key_qualifier: Optional key-qualifier label; ``None`` when the field is
+            not a key or the API did not supply one.
     """
 
     name: str
     type: str
     is_key: bool = False
     key_qualifier: str | None = None
-
-    @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> "FieldDef":
-        """Build a :class:`FieldDef` from a raw metadata field object.
-
-        Args:
-            payload: A field entry from the metadata or DLO-schema response.
-
-        Returns:
-            A populated :class:`FieldDef`.
-        """
-        return cls(
-            name=payload["name"],
-            type=payload.get("type", "Unknown"),
-            is_key=bool(payload.get("isKey", payload.get("keyQualifier"))),
-            key_qualifier=payload.get("keyQualifier"),
-        )
+    #: True when ``type`` was resolved from the mapped DLO field (the DMO
+    #: endpoint returned a generic/Unknown type). The type token stays clean;
+    #: renderers surface the provenance (e.g. a "(via DLO)" marker), not this.
+    type_inferred: bool = False
 
 
 @dataclass(frozen=True)
@@ -60,21 +47,6 @@ class DataModelObject:
     label: str
     fields: tuple[FieldDef, ...] = ()
 
-    @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> "DataModelObject":
-        """Build a :class:`DataModelObject` from a raw metadata entity."""
-        fields = tuple(
-            sorted(
-                (FieldDef.from_api(f) for f in payload.get("fields", [])),
-                key=lambda fd: fd.name.lower(),
-            )
-        )
-        return cls(
-            name=payload["name"],
-            label=payload.get("label", payload["name"]),
-            fields=fields,
-        )
-
 
 @dataclass(frozen=True)
 class DataLakeObject:
@@ -84,20 +56,55 @@ class DataLakeObject:
     label: str
     fields: tuple[FieldDef, ...] = ()
 
-    @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> "DataLakeObject":
-        """Build a :class:`DataLakeObject` from a raw metadata entity."""
-        fields = tuple(
-            sorted(
-                (FieldDef.from_api(f) for f in payload.get("fields", [])),
-                key=lambda fd: fd.name.lower(),
-            )
-        )
-        return cls(
-            name=payload["name"],
-            label=payload.get("label", payload["name"]),
-            fields=fields,
-        )
+
+@dataclass(frozen=True)
+class DataStream:
+    """One Data Stream and its source/refresh metadata (the SI doc's Sheet 1).
+
+    Lightweight, table-oriented row that sits alongside the DLOs. ``dlo_name`` /
+    ``dlo_label`` link the row to the DLO it populates. Scalar fields are
+    ``None`` when the org's JSON did not supply them.
+    """
+
+    name: str
+    dlo_name: str
+    dlo_label: str
+    data_source: str | None = None
+    category: str | None = None
+    event_time_field: str | None = None
+    primary_keys: tuple[str, ...] = ()
+    formula_fields: tuple[str, ...] = ()
+    formula_calculations: tuple[str, ...] = ()
+    org_unit_identifier: str | None = None
+    schedule_frequency: str | None = None
+    refresh_mode: str | None = None
+    de_extraction_mode: str | None = None
+
+
+@dataclass(frozen=True)
+class FieldMapping:
+    """One Source → DLO field-mapping row (the SI doc's Sheet 2).
+
+    ``source_field`` is the original source field name (``None`` for Data Cloud
+    system fields with no source). ``is_foreign_key`` is heuristic — true for
+    fields whose API name starts with ``KQ_`` (Key Qualifier). Nullability is not
+    exposed by ``/ssot/data-streams`` and is therefore not modeled.
+    """
+
+    stream_name: str
+    source_field: str | None
+    dlo_field_label: str
+    dlo_field_name: str
+    data_type: str
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+    data_source: str | None = None
+    #: DLO API name this field belongs to (e.g. ``Account_CRM__dll``).
+    dlo_name: str = ""
+    #: Tri-state nullability: ``True``/``False`` when the source exposes it,
+    #: ``None`` when unknown (``/ssot/data-streams`` does not expose nullability,
+    #: so this is ``None`` for those streams — rendered blank, never guessed).
+    nullable: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -109,16 +116,6 @@ class CalculatedInsight:
     dimensions: tuple[str, ...] = ()
     measures: tuple[str, ...] = ()
 
-    @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> "CalculatedInsight":
-        """Build a :class:`CalculatedInsight` from a raw metadata entity."""
-        return cls(
-            name=payload["name"],
-            label=payload.get("label", payload["name"]),
-            dimensions=tuple(sorted(payload.get("dimensions", []))),
-            measures=tuple(sorted(payload.get("measures", []))),
-        )
-
 
 @dataclass(frozen=True)
 class IdentityResolutionRuleset:
@@ -129,16 +126,6 @@ class IdentityResolutionRuleset:
     match_rules: tuple[str, ...] = ()
     reconciliation_rule: str | None = None
 
-    @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> "IdentityResolutionRuleset":
-        """Build an :class:`IdentityResolutionRuleset` from raw metadata."""
-        return cls(
-            name=payload["name"],
-            label=payload.get("label", payload["name"]),
-            match_rules=tuple(sorted(payload.get("matchRules", []))),
-            reconciliation_rule=payload.get("reconciliationRule"),
-        )
-
 
 @dataclass(frozen=True)
 class Mapping:
@@ -147,19 +134,61 @@ class Mapping:
     source_dlo: str
     target_dmo: str
 
-    @classmethod
-    def from_api(cls, payload: dict[str, Any]) -> "Mapping":
-        """Build a :class:`Mapping` from a raw metadata mapping entry."""
-        return cls(source_dlo=payload["sourceDlo"], target_dmo=payload["targetDmo"])
+
+@dataclass(frozen=True)
+class DmoFieldMapping:
+    """One DLO→DMO field-level mapping row (the SI doc's Sheet 3).
+
+    Carries all eight columns of the verified Apex export. Field-level labels
+    fall back to their API name when the API exposes no human label (Data Cloud
+    ``__dll``/``__dlm`` objects are not describable, so ``Schema.describe`` —
+    the Apex label source — fails for them).
+    """
+
+    source_dlo_name: str
+    source_dlo_label: str
+    source_field_name: str
+    source_field_label: str
+    target_dmo_name: str
+    target_dmo_label: str
+    target_field_name: str
+    target_field_label: str
+    #: Underlying source-system field reference, when the mapping/connector
+    #: payload exposes one; ``None`` otherwise (kept blank, never fabricated).
+    data_source_field: str | None = None
+    #: Manual/glossary columns — not derivable from metadata. Always ``None``
+    #: here; present so the sheet structure has a place to hold curated values.
+    business_label: str | None = None
+    manual_mapping: str | None = None
+
+
+@dataclass(frozen=True)
+class Relationship:
+    """A DMO relationship row (the SI doc's Relationships sheet / Sheet 8).
+
+    Built from ``/ssot/data-model-objects/{dmo}/relationships``. ``source_dmo_*``
+    is the DMO that was queried (authoritative). The related entity/field and
+    cardinality are read defensively from the payload across known Data Cloud
+    key spellings; any property the org does not expose is left ``None`` and
+    rendered blank — the row is never dropped just because a column is empty.
+    """
+
+    source_dmo_name: str
+    source_dmo_label: str
+    source_field: str | None = None
+    cardinality: str | None = None
+    related_entity: str | None = None
+    related_field: str | None = None
+    relationship_label: str | None = None
+    #: Relationship status as reported by the API (ACTIVE / INACTIVE /
+    #: DEACTIVATEDBYUSER / …). Surfaced so inactive standard relationships are
+    #: visible and filterable rather than silently dropped.
+    status: str | None = None
 
 
 @dataclass
 class OrgSchema:
-    """Normalized snapshot of everything we document for one Data 360 org.
-
-    Collections are sorted alphabetically so that the same org always produces
-    byte-identical output (a project-wide determinism guarantee).
-    """
+    """Normalized snapshot of everything we document for one Data 360 org."""
 
     org_name: str
     instance_url: str
@@ -169,76 +198,79 @@ class OrgSchema:
     cios: tuple[CalculatedInsight, ...] = ()
     identity_rulesets: tuple[IdentityResolutionRuleset, ...] = ()
     mappings: tuple[Mapping, ...] = ()
+    streams: tuple[DataStream, ...] = ()
+    field_mappings: tuple[FieldMapping, ...] = ()
+    dmo_field_mappings: tuple[DmoFieldMapping, ...] = ()
+    relationships: tuple[Relationship, ...] = ()
 
     @classmethod
-    def from_metadata(
+    def build(
         cls,
-        payload: dict[str, Any],
         *,
+        org_name: str,
         instance_url: str,
-        org_name: str | None = None,
+        dmos: tuple[DataModelObject, ...] = (),
+        dlos: tuple[DataLakeObject, ...] = (),
+        cios: tuple[CalculatedInsight, ...] = (),
+        identity_rulesets: tuple[IdentityResolutionRuleset, ...] = (),
+        mappings: tuple[Mapping, ...] = (),
+        streams: tuple[DataStream, ...] = (),
+        field_mappings: tuple[FieldMapping, ...] = (),
+        dmo_field_mappings: tuple[DmoFieldMapping, ...] = (),
+        relationships: tuple[Relationship, ...] = (),
         generated_at: datetime | None = None,
     ) -> "OrgSchema":
-        """Normalize a raw ``/api/v1/metadata/`` response into an OrgSchema.
+        """Assemble an :class:`OrgSchema`, sorting every collection.
 
-        Args:
-            payload: The aggregated metadata response (all pages merged), with
-                ``dmos``, ``dlos``, ``cios``, ``identityResolutionRulesets`` and
-                ``mappings`` keys.
-            instance_url: The org's instance URL.
-            org_name: Human-readable org name for the document title. Falls back
-                to ``payload['orgName']`` and then the instance host.
-            generated_at: Override timestamp (mainly for deterministic tests).
-
-        Returns:
-            A fully populated, alphabetically sorted :class:`OrgSchema`.
+        Sorting (objects by name, mappings by (source, target)) is what makes
+        the downstream document output deterministic. Field-level sorting is the
+        fetcher's job, done as each object is constructed.
         """
-        resolved_name = (
-            org_name
-            or payload.get("orgName")
-            or instance_url.split("//", 1)[-1].split("/", 1)[0]
-        )
-        dmos = tuple(
-            sorted(
-                (DataModelObject.from_api(d) for d in payload.get("dmos", [])),
-                key=lambda o: o.name.lower(),
-            )
-        )
-        dlos = tuple(
-            sorted(
-                (DataLakeObject.from_api(d) for d in payload.get("dlos", [])),
-                key=lambda o: o.name.lower(),
-            )
-        )
-        cios = tuple(
-            sorted(
-                (CalculatedInsight.from_api(c) for c in payload.get("cios", [])),
-                key=lambda o: o.name.lower(),
-            )
-        )
-        rulesets = tuple(
-            sorted(
-                (
-                    IdentityResolutionRuleset.from_api(r)
-                    for r in payload.get("identityResolutionRulesets", [])
-                ),
-                key=lambda o: o.name.lower(),
-            )
-        )
-        mappings = tuple(
-            sorted(
-                (Mapping.from_api(m) for m in payload.get("mappings", [])),
-                key=lambda m: (m.source_dlo.lower(), m.target_dmo.lower()),
-            )
-        )
-        kwargs: dict[str, Any] = dict(
-            org_name=resolved_name,
+        kwargs = dict(
+            org_name=org_name,
             instance_url=instance_url,
-            dmos=dmos,
-            dlos=dlos,
-            cios=cios,
-            identity_rulesets=rulesets,
-            mappings=mappings,
+            dmos=tuple(sorted(dmos, key=lambda o: o.name.lower())),
+            dlos=tuple(sorted(dlos, key=lambda o: o.name.lower())),
+            cios=tuple(sorted(cios, key=lambda o: o.name.lower())),
+            identity_rulesets=tuple(
+                sorted(identity_rulesets, key=lambda o: o.name.lower())
+            ),
+            mappings=tuple(
+                sorted(
+                    mappings,
+                    key=lambda m: (m.source_dlo.lower(), m.target_dmo.lower()),
+                )
+            ),
+            streams=tuple(sorted(streams, key=lambda s: s.name.lower())),
+            field_mappings=tuple(
+                sorted(
+                    field_mappings,
+                    key=lambda fm: (
+                        fm.stream_name.lower(),
+                        fm.dlo_field_name.lower(),
+                    ),
+                )
+            ),
+            dmo_field_mappings=tuple(
+                sorted(
+                    dmo_field_mappings,
+                    key=lambda dfm: (
+                        dfm.source_dlo_name.lower(),
+                        dfm.target_dmo_name.lower(),
+                        dfm.source_field_name.lower(),
+                    ),
+                )
+            ),
+            relationships=tuple(
+                sorted(
+                    relationships,
+                    key=lambda r: (
+                        r.source_dmo_name.lower(),
+                        (r.source_field or "").lower(),
+                        (r.related_entity or "").lower(),
+                    ),
+                )
+            ),
         )
         if generated_at is not None:
             kwargs["generated_at"] = generated_at
