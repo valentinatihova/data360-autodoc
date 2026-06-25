@@ -46,15 +46,25 @@ def cli() -> None:
 
 @cli.command()
 @click.option("--instance-url", required=True, help="Org base URL.")
-@click.option("--client-id", required=True, help="Connected app consumer key.")
+@click.option(
+    "--access-token",
+    default=None,
+    help="Use a pre-obtained OAuth access token and skip JWT auth. When set, "
+    "--client-id / --private-key / --username are not needed.",
+)
+@click.option(
+    "--client-id", default=None, help="Connected app consumer key (JWT auth)."
+)
 @click.option(
     "--private-key",
     "private_key_path",
-    required=True,
+    default=None,
     type=click.Path(exists=True, dir_okay=False),
-    help="Path to the connected app's PEM private key.",
+    help="Path to the connected app's PEM private key (JWT auth).",
 )
-@click.option("--username", required=True, help="Salesforce username to impersonate.")
+@click.option(
+    "--username", default=None, help="Salesforce username to impersonate (JWT auth)."
+)
 @click.option(
     "--output",
     "output_dir",
@@ -76,32 +86,83 @@ def cli() -> None:
     default=False,
     help="Authenticate against test.salesforce.com (sandbox/scratch orgs).",
 )
+@click.option(
+    "--api-version",
+    "api_version",
+    default=None,
+    help="Data API version (e.g. v62.0). Default: auto-detect the org's highest.",
+)
+@click.option(
+    "--timeout",
+    default=120.0,
+    show_default=True,
+    type=float,
+    help="Per-request timeout (seconds) for metadata calls. Data Cloud is slow.",
+)
 def generate(
     instance_url: str,
-    client_id: str,
-    private_key_path: str,
-    username: str,
+    access_token: str | None,
+    client_id: str | None,
+    private_key_path: str | None,
+    username: str | None,
     output_dir: str,
     output_format: str,
     sandbox: bool,
+    api_version: str | None,
+    timeout: float,
 ) -> None:
     """Fetch an org's metadata and write documentation artifacts."""
-    token_url = SANDBOX_TOKEN_URL if sandbox else DEFAULT_TOKEN_URL
-    audience = AUD_SANDBOX if sandbox else AUD_PRODUCTION
+    if access_token:
+        token = access_token
+        org_url = instance_url
+    else:
+        missing = [
+            flag
+            for flag, value in (
+                ("--client-id", client_id),
+                ("--private-key", private_key_path),
+                ("--username", username),
+            )
+            if not value
+        ]
+        if missing:
+            raise click.UsageError(
+                "Provide --access-token, or all of --client-id, --private-key, "
+                f"--username for JWT auth. Missing: {', '.join(missing)}."
+            )
+        token_url = SANDBOX_TOKEN_URL if sandbox else DEFAULT_TOKEN_URL
+        audience = AUD_SANDBOX if sandbox else AUD_PRODUCTION
+        try:
+            auth = get_access_token(
+                instance_url=instance_url,
+                client_id=client_id,
+                private_key_path=private_key_path,
+                username=username,
+                token_url=token_url,
+                audience=audience,
+            )
+        except AuthError as exc:
+            raise click.ClickException(str(exc)) from exc
+        token = auth["access_token"]
+        org_url = auth["instance_url"]
+
+    def _progress(message: str, inline: bool) -> None:
+        # Progress goes to stderr so it never pollutes the doc output. inline
+        # uses a carriage return to update the DMO counter in place.
+        if inline:
+            click.echo(f"\r{message}", nl=False, err=True)
+        else:
+            click.echo(message, err=True)
 
     try:
-        auth = get_access_token(
-            instance_url=instance_url,
-            client_id=client_id,
-            private_key_path=private_key_path,
-            username=username,
-            token_url=token_url,
-            audience=audience,
-        )
         schema = fetch_metadata(
-            instance_url=auth["instance_url"], access_token=auth["access_token"]
+            instance_url=org_url,
+            access_token=token,
+            api_version=api_version,
+            timeout=timeout,
+            progress=_progress,
         )
-    except (AuthError, MetadataError) as exc:
+    except MetadataError as exc:
         # Surface a clean one-line error and exit non-zero — never a traceback.
         raise click.ClickException(str(exc)) from exc
 
