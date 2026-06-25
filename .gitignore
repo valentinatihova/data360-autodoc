@@ -30,3 +30,8 @@ htmlcov/
 *.swp
 .idea/
 .vscode/
+
+# Generated documentation output (CLI artifacts)
+out/
+# Local prototype / analysis artifacts (not part of the shipped tool)
+output/

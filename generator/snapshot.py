@@ -21,10 +21,14 @@ from models import (
     CalculatedInsight,
     DataLakeObject,
     DataModelObject,
+    DataStream,
+    DmoFieldMapping,
     FieldDef,
+    FieldMapping,
     IdentityResolutionRuleset,
     Mapping,
     OrgSchema,
+    Relationship,
 )
 
 #: Bump when the on-disk shape changes in a way that affects diffing.
@@ -79,6 +83,68 @@ def to_dict(schema: OrgSchema) -> dict[str, Any]:
         "mappings": [
             {"source_dlo": m.source_dlo, "target_dmo": m.target_dmo}
             for m in schema.mappings
+        ],
+        "streams": [
+            {
+                "name": s.name,
+                "dlo_name": s.dlo_name,
+                "dlo_label": s.dlo_label,
+                "data_source": s.data_source,
+                "category": s.category,
+                "event_time_field": s.event_time_field,
+                "primary_keys": list(s.primary_keys),
+                "formula_fields": list(s.formula_fields),
+                "formula_calculations": list(s.formula_calculations),
+                "org_unit_identifier": s.org_unit_identifier,
+                "schedule_frequency": s.schedule_frequency,
+                "refresh_mode": s.refresh_mode,
+                "de_extraction_mode": s.de_extraction_mode,
+            }
+            for s in schema.streams
+        ],
+        "field_mappings": [
+            {
+                "stream_name": fm.stream_name,
+                "source_field": fm.source_field,
+                "dlo_field_label": fm.dlo_field_label,
+                "dlo_field_name": fm.dlo_field_name,
+                "data_type": fm.data_type,
+                "is_primary_key": fm.is_primary_key,
+                "is_foreign_key": fm.is_foreign_key,
+                "data_source": fm.data_source,
+                "dlo_name": fm.dlo_name,
+                "nullable": fm.nullable,
+            }
+            for fm in schema.field_mappings
+        ],
+        "dmo_field_mappings": [
+            {
+                "source_dlo_name": d.source_dlo_name,
+                "source_dlo_label": d.source_dlo_label,
+                "source_field_name": d.source_field_name,
+                "source_field_label": d.source_field_label,
+                "target_dmo_name": d.target_dmo_name,
+                "target_dmo_label": d.target_dmo_label,
+                "target_field_name": d.target_field_name,
+                "target_field_label": d.target_field_label,
+                "data_source_field": d.data_source_field,
+                "business_label": d.business_label,
+                "manual_mapping": d.manual_mapping,
+            }
+            for d in schema.dmo_field_mappings
+        ],
+        "relationships": [
+            {
+                "source_dmo_name": r.source_dmo_name,
+                "source_dmo_label": r.source_dmo_label,
+                "source_field": r.source_field,
+                "cardinality": r.cardinality,
+                "related_entity": r.related_entity,
+                "related_field": r.related_field,
+                "relationship_label": r.relationship_label,
+                "status": r.status,
+            }
+            for r in schema.relationships
         ],
     }
 
@@ -137,6 +203,68 @@ def from_dict(data: dict[str, Any]) -> OrgSchema:
             Mapping(source_dlo=m["source_dlo"], target_dmo=m["target_dmo"])
             for m in data.get("mappings", [])
         ),
+        streams=tuple(
+            DataStream(
+                name=s["name"],
+                dlo_name=s["dlo_name"],
+                dlo_label=s["dlo_label"],
+                data_source=s.get("data_source"),
+                category=s.get("category"),
+                event_time_field=s.get("event_time_field"),
+                primary_keys=tuple(s.get("primary_keys", [])),
+                formula_fields=tuple(s.get("formula_fields", [])),
+                formula_calculations=tuple(s.get("formula_calculations", [])),
+                org_unit_identifier=s.get("org_unit_identifier"),
+                schedule_frequency=s.get("schedule_frequency"),
+                refresh_mode=s.get("refresh_mode"),
+                de_extraction_mode=s.get("de_extraction_mode"),
+            )
+            for s in data.get("streams", [])
+        ),
+        field_mappings=tuple(
+            FieldMapping(
+                stream_name=fm["stream_name"],
+                source_field=fm.get("source_field"),
+                dlo_field_label=fm["dlo_field_label"],
+                dlo_field_name=fm["dlo_field_name"],
+                data_type=fm["data_type"],
+                is_primary_key=fm.get("is_primary_key", False),
+                is_foreign_key=fm.get("is_foreign_key", False),
+                data_source=fm.get("data_source"),
+                dlo_name=fm.get("dlo_name", ""),
+                nullable=fm.get("nullable"),
+            )
+            for fm in data.get("field_mappings", [])
+        ),
+        dmo_field_mappings=tuple(
+            DmoFieldMapping(
+                source_dlo_name=d["source_dlo_name"],
+                source_dlo_label=d["source_dlo_label"],
+                source_field_name=d["source_field_name"],
+                source_field_label=d["source_field_label"],
+                target_dmo_name=d["target_dmo_name"],
+                target_dmo_label=d["target_dmo_label"],
+                target_field_name=d["target_field_name"],
+                target_field_label=d["target_field_label"],
+                data_source_field=d.get("data_source_field"),
+                business_label=d.get("business_label"),
+                manual_mapping=d.get("manual_mapping"),
+            )
+            for d in data.get("dmo_field_mappings", [])
+        ),
+        relationships=tuple(
+            Relationship(
+                source_dmo_name=r["source_dmo_name"],
+                source_dmo_label=r["source_dmo_label"],
+                source_field=r.get("source_field"),
+                cardinality=r.get("cardinality"),
+                related_entity=r.get("related_entity"),
+                related_field=r.get("related_field"),
+                relationship_label=r.get("relationship_label"),
+                status=r.get("status"),
+            )
+            for r in data.get("relationships", [])
+        ),
     )
 
 
@@ -151,6 +279,7 @@ def _object_to_dict(obj: DataModelObject | DataLakeObject) -> dict[str, Any]:
                 "type": f.type,
                 "is_key": f.is_key,
                 "key_qualifier": f.key_qualifier,
+                "type_inferred": f.type_inferred,
             }
             for f in obj.fields
         ],
@@ -165,6 +294,7 @@ def _fields_from(obj: dict[str, Any]) -> tuple[FieldDef, ...]:
             type=f["type"],
             is_key=f.get("is_key", False),
             key_qualifier=f.get("key_qualifier"),
+            type_inferred=f.get("type_inferred", False),
         )
         for f in obj.get("fields", [])
     )

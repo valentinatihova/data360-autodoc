@@ -1,7 +1,8 @@
 """Mermaid diagram generator for a Data 360 org.
 
 Pure function of :class:`~models.OrgSchema` -> a ``graph LR`` Mermaid string
-showing DLO -> DMO mappings.
+showing DLO -> DMO mappings (solid edges) and active DMO -> DMO relationships
+(dashed edges, labeled by cardinality).
 
 Node identity is split from display text so arbitrary org labels can never
 break Mermaid syntax:
@@ -15,7 +16,10 @@ break Mermaid syntax:
 Example output::
 
     graph LR
-      Order_Home__dll["Order (Home)"] --> Individual__dmo["Individual"]
+      Order_Home__dll["Order (Home)"]
+      Individual__dmo["Individual"]
+      Order_Home__dll --> Individual__dmo
+      ContactPointEmail__dlm -.->|N:1| Individual__dmo
 """
 
 from __future__ import annotations
@@ -44,7 +48,16 @@ def render_mermaid(schema: OrgSchema) -> str:
     """
     label_by_name = _build_label_index(schema)
 
-    if not schema.mappings:
+    # DMO->DMO relationships are drawn as dashed edges. Only ACTIVE ones are
+    # diagrammed (the live model); inactive standard relationships stay in the
+    # Markdown Relationships table but would clutter the graph.
+    rels = [
+        r
+        for r in schema.relationships
+        if r.related_entity and (not r.status or r.status == "ACTIVE")
+    ]
+
+    if not schema.mappings and not rels:
         return "graph LR\n" '  no_mappings["No DLO to DMO mappings found"]'
 
     lines = ["graph LR"]
@@ -52,19 +65,37 @@ def render_mermaid(schema: OrgSchema) -> str:
     node_decls: list[str] = []
     edges: list[str] = []
 
+    def declare(name: str) -> str:
+        """Declare a node once, in first-seen (sorted) order; return its id."""
+        node_id = _node_id(name)
+        if node_id not in declared:
+            declared.add(node_id)
+            label = label_by_name.get(name, name)
+            node_decls.append(f'  {node_id}["{_escape_label(label)}"]')
+        return node_id
+
+    # Solid edges: DLO -> DMO field mappings.
     for mapping in schema.mappings:
-        src_id = _node_id(mapping.source_dlo)
-        dst_id = _node_id(mapping.target_dmo)
-        # Declare each unique node once, in first-seen (sorted) order.
-        for node_id, name in (
-            (src_id, mapping.source_dlo),
-            (dst_id, mapping.target_dmo),
-        ):
-            if node_id not in declared:
-                declared.add(node_id)
-                label = label_by_name.get(name, name)
-                node_decls.append(f'  {node_id}["{_escape_label(label)}"]')
+        src_id = declare(mapping.source_dlo)
+        dst_id = declare(mapping.target_dmo)
         edges.append(f"  {src_id} --> {dst_id}")
+
+    # Dashed edges: DMO -> DMO relationships, labeled by cardinality. De-duped
+    # by (source, target, cardinality) so multiple field-level links between the
+    # same two DMOs draw a single arrow.
+    seen_rel_edges: set[tuple[str, str, str]] = set()
+    for r in rels:
+        src_id = declare(r.source_dmo_name)
+        dst_id = declare(r.related_entity)
+        card = r.cardinality or ""
+        edge_key = (src_id, dst_id, card)
+        if edge_key in seen_rel_edges:
+            continue
+        seen_rel_edges.add(edge_key)
+        if card:
+            edges.append(f"  {src_id} -.->|{_escape_label(card)}| {dst_id}")
+        else:
+            edges.append(f"  {src_id} -.-> {dst_id}")
 
     lines.extend(node_decls)
     lines.extend(edges)

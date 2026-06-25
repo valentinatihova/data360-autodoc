@@ -5,7 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from generator.mermaid import render_mermaid
-from models import DataLakeObject, DataModelObject, Mapping, OrgSchema
+from models import (
+    DataLakeObject,
+    DataModelObject,
+    Mapping,
+    OrgSchema,
+    Relationship,
+)
 
 FIXED_TS = datetime(2026, 6, 21, 17, 30, 0, tzinfo=timezone.utc)
 
@@ -77,6 +83,79 @@ def test_each_node_declared_once() -> None:
     assert out.count('Shared__dmo["Shared"]') == 1
     assert "  A__dll --> Shared__dmo" in out
     assert "  B__dll --> Shared__dmo" in out
+
+
+def test_active_relationship_dashed_edge() -> None:
+    schema = _schema(
+        dmos=(
+            DataModelObject(
+                name="ssot__ContactPointEmail__dlm", label="Contact Point Email"
+            ),
+            DataModelObject(name="ssot__Individual__dlm", label="Individual"),
+        ),
+        relationships=(
+            Relationship(
+                source_dmo_name="ssot__ContactPointEmail__dlm",
+                source_dmo_label="Contact Point Email",
+                source_field="ssot__PartyId__c",
+                cardinality="N:1",
+                related_entity="ssot__Individual__dlm",
+                related_field="ssot__Id__c",
+                status="ACTIVE",
+            ),
+        ),
+    )
+    out = render_mermaid(schema)
+    # Dashed edge labeled by cardinality; both nodes declared with their labels.
+    assert "  ssot__ContactPointEmail__dlm -.->|N:1| ssot__Individual__dlm" in out
+    assert 'ssot__Individual__dlm["Individual"]' in out
+
+
+def test_inactive_relationship_not_diagrammed() -> None:
+    # Inactive relationships stay in the Markdown table but not the diagram.
+    schema = _schema(
+        relationships=(
+            Relationship(
+                source_dmo_name="ssot__Account__dlm",
+                source_dmo_label="Account",
+                related_entity="ssot__ContactPointEmail__dlm",
+                cardinality="N:1",
+                status="INACTIVE",
+            ),
+        ),
+    )
+    out = render_mermaid(schema)
+    # No active edges and no mappings -> placeholder, no dashed edge.
+    assert "-.->" not in out
+    assert out == 'graph LR\n  no_mappings["No DLO to DMO mappings found"]'
+
+
+def test_relationship_edge_deduped() -> None:
+    # Two field-level links between the same DMOs -> one dashed arrow.
+    schema = _schema(
+        relationships=(
+            Relationship(
+                source_dmo_name="A__dlm",
+                source_dmo_label="A",
+                source_field="F1",
+                cardinality="N:1",
+                related_entity="B__dlm",
+                related_field="Id",
+                status="ACTIVE",
+            ),
+            Relationship(
+                source_dmo_name="A__dlm",
+                source_dmo_label="A",
+                source_field="F2",
+                cardinality="N:1",
+                related_entity="B__dlm",
+                related_field="Id",
+                status="ACTIVE",
+            ),
+        ),
+    )
+    out = render_mermaid(schema)
+    assert out.count("  A__dlm -.->|N:1| B__dlm") == 1
 
 
 def test_deterministic_output() -> None:
