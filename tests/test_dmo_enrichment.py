@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import responses
 
-from fetcher import metadata
+from data360_autodoc.fetcher import metadata
 
 INSTANCE_URL = "https://example.my.salesforce.com"
 API = "v62.0"

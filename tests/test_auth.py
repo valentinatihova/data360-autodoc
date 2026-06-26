@@ -6,7 +6,7 @@ import jwt
 import pytest
 import responses
 
-from fetcher import auth
+from data360_autodoc.fetcher import auth
 
 INSTANCE_URL = "https://example.my.salesforce.com"
 # get_access_token defaults to the production login host, not the instance URL.
