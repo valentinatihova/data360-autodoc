@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from generator.markdown import render_markdown
-from models import (
+from data360_autodoc.generator.markdown import render_markdown
+from data360_autodoc.models import (
     CalculatedInsight,
     DataLakeObject,
     DataModelObject,

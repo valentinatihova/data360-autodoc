@@ -21,8 +21,8 @@ import logging
 from dataclasses import replace
 from typing import Any, Callable, Final
 
-from fetcher._http import FetchError, get_json, iter_pages
-from models import (
+from data360_autodoc.fetcher._http import FetchError, get_json, iter_pages
+from data360_autodoc.models import (
     DataModelObject,
     DmoFieldMapping,
     FieldDef,
@@ -31,7 +31,7 @@ from models import (
     OrgSchema,
     Relationship,
 )
-from fetcher.streams import StreamsError, fetch_dlos_and_streams
+from data360_autodoc.fetcher.streams import StreamsError, fetch_dlos_and_streams
 
 #: DMO field types that carry no real type information; safe to override with a
 #: type inferred from the mapped DLO field (see :func:`_enrich_dmo_field_types`).

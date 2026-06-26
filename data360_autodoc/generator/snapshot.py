@@ -17,7 +17,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from models import (
+from data360_autodoc.models import (
     CalculatedInsight,
     DataLakeObject,
     DataModelObject,

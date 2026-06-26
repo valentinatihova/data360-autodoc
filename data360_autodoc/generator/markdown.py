@@ -25,7 +25,7 @@ from __future__ import annotations
 from datetime import timezone
 from itertools import groupby
 
-from models import (
+from data360_autodoc.models import (
     CalculatedInsight,
     DataLakeObject,
     DataModelObject,
