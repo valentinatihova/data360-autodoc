@@ -1,6 +1,7 @@
 # data360-autodoc
 
-[![PyPI version](https://img.shields.io/badge/pypi-coming%20soon-blue)](https://pypi.org/project/data360-autodoc/)
+[![PyPI version](https://img.shields.io/pypi/v/data360-autodoc)](https://pypi.org/project/data360-autodoc/)
+[![Python](https://img.shields.io/pypi/pyversions/data360-autodoc)](https://pypi.org/project/data360-autodoc/)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -15,7 +16,7 @@ Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, k
 
 ## For who
 
-Built for **Salesforce SI consultants and Data Cloud practitioners** who lose days hand-writing org documentation for every engagement. Works against any Data 360 org you can authenticate to with a connected app — including **Developer Edition / Data Cloud Dev orgs**, so you can try it on a sandbox before pointing it at a client.
+Built for **Salesforce SI consultants and Data Cloud practitioners** who lose days hand-writing org documentation for every engagement. It works against any Data 360 org you can authenticate to with a connected app, and is **tested against Developer Edition / Data Cloud dev orgs** — try it on a sandbox before pointing it at a client. If your org has a shape it doesn't handle yet, [open an issue](https://github.com/valentinatihova/data360-autodoc/issues) and it gets fixed.
 
 ## Quick start
 
