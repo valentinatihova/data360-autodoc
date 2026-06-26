@@ -13,8 +13,8 @@ import logging
 
 import responses
 
-from fetcher import metadata
-from models import Mapping
+from data360_autodoc.fetcher import metadata
+from data360_autodoc.models import Mapping
 
 INSTANCE_URL = "https://example.my.salesforce.com"
 API = "v62.0"

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import re
 
-from models import OrgSchema
+from data360_autodoc.models import OrgSchema
 
 _UNSAFE_ID = re.compile(r"[^A-Za-z0-9_]")
 

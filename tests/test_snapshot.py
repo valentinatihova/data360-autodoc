@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from generator.snapshot import (
+from data360_autodoc.generator.snapshot import (
     SNAPSHOT_VERSION,
     from_dict,
     load_json,
     render_json,
     to_dict,
 )
-from models import (
+from data360_autodoc.models import (
     CalculatedInsight,
     DataLakeObject,
     DataModelObject,

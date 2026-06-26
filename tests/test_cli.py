@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from cli import main as cli_main
-from models import (
+from data360_autodoc.cli import main as cli_main
+from data360_autodoc.models import (
     DataLakeObject,
     DataModelObject,
     IdentityResolutionRuleset,
@@ -130,7 +130,7 @@ def test_missing_required_option_errors(key_file: str, tmp_path: Path) -> None:
 def test_auth_failure_is_clean_not_traceback(
     key_file: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from fetcher.auth import AuthError
+    from data360_autodoc.fetcher.auth import AuthError
 
     def _boom(**kwargs):
         raise AuthError("JWT bearer exchange rejected (400): invalid_grant")
@@ -146,7 +146,7 @@ def test_auth_failure_is_clean_not_traceback(
 def test_snapshot_round_trips_from_written_file(key_file: str, tmp_path: Path) -> None:
     out = tmp_path / "rt"
     CliRunner().invoke(cli_main.cli, _args(key_file, out, "json"))
-    from generator.snapshot import load_json
+    from data360_autodoc.generator.snapshot import load_json
 
     schema = load_json((out / "acme-data-cloud.json").read_text(encoding="utf-8"))
     assert schema.org_name == "Acme Data Cloud"

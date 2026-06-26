@@ -22,7 +22,7 @@ from pathlib import Path
 
 import click
 
-from fetcher.auth import (
+from data360_autodoc.fetcher.auth import (
     AUD_PRODUCTION,
     AUD_SANDBOX,
     DEFAULT_TOKEN_URL,
@@ -30,10 +30,10 @@ from fetcher.auth import (
     AuthError,
     get_access_token,
 )
-from fetcher.metadata import MetadataError, fetch_metadata
-from generator.markdown import render_markdown
-from generator.mermaid import render_mermaid
-from generator.snapshot import render_json
+from data360_autodoc.fetcher.metadata import MetadataError, fetch_metadata
+from data360_autodoc.generator.markdown import render_markdown
+from data360_autodoc.generator.mermaid import render_mermaid
+from data360_autodoc.generator.snapshot import render_json
 
 #: Valid values for the ``--format`` option.
 FORMATS = ["markdown", "json", "pdf", "all"]
