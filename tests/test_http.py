@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import responses
 
-from fetcher._http import FetchError, get_json
+from data360_autodoc.fetcher._http import FetchError, get_json
 
 URL = "https://example.my.salesforce.com/services/data/"
 

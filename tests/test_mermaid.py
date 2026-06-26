@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from generator.mermaid import render_mermaid
-from models import (
+from data360_autodoc.generator.mermaid import render_mermaid
+from data360_autodoc.models import (
     DataLakeObject,
     DataModelObject,
     Mapping,

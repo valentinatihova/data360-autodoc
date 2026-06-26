@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from fetcher._http import FetchError, iter_pages
-from models import DataLakeObject, DataStream, FieldDef, FieldMapping
+from data360_autodoc.fetcher._http import FetchError, iter_pages
+from data360_autodoc.models import DataLakeObject, DataStream, FieldDef, FieldMapping
 
 #: Connector-name lookup order, shared by stream + field-mapping rows.
 _CONNECTOR_KEYS = ("connectorName", "name", "label", "displayName", "connectorType")

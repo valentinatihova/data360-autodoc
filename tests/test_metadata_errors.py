@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 import responses
 
-from fetcher import metadata
-from fetcher.streams import StreamsError
+from data360_autodoc.fetcher import metadata
+from data360_autodoc.fetcher.streams import StreamsError
 
 INSTANCE_URL = "https://example.my.salesforce.com"
 API = "v62.0"
