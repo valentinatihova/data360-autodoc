@@ -11,8 +11,15 @@ Outputs are selected with ``--format``:
 - ``pdf``      — not yet implemented (stub; warns and skips)
 - ``all``      — markdown + json (+ pdf stub warning)
 
-The ``.json`` snapshot is a first-class output, not a debug artifact: the paid
-drift tier loads a prior snapshot and diffs it against a fresh fetch.
+The ``.json`` snapshot is a first-class output, not a debug artifact: the
+``diff`` command loads two snapshots and reports the schema drift between them::
+
+    data360-autodoc diff old.json new.json [--format markdown|json]
+        [--output FILE] [--fail-on-change]
+
+``diff`` exit codes: ``0`` no drift (or drift without ``--fail-on-change``),
+``1`` drift detected with ``--fail-on-change``, ``2`` unreadable snapshot or
+usage error.
 """
 
 from __future__ import annotations
@@ -22,6 +29,7 @@ from pathlib import Path
 
 import click
 
+from data360_autodoc.diff import diff_schemas
 from data360_autodoc.fetcher.auth import (
     AUD_PRODUCTION,
     AUD_SANDBOX,
@@ -31,12 +39,23 @@ from data360_autodoc.fetcher.auth import (
     get_access_token,
 )
 from data360_autodoc.fetcher.metadata import MetadataError, fetch_metadata
+from data360_autodoc.generator.drift import render_diff_json, render_diff_markdown
 from data360_autodoc.generator.markdown import render_markdown
 from data360_autodoc.generator.mermaid import render_mermaid
-from data360_autodoc.generator.snapshot import render_json
+from data360_autodoc.generator.snapshot import load_json, render_json
+from data360_autodoc.models import OrgSchema
 
 #: Valid values for the ``--format`` option.
 FORMATS = ["markdown", "json", "pdf", "all"]
+
+#: Valid values for ``diff --format``.
+DIFF_FORMATS = ["markdown", "json"]
+
+#: ``diff --fail-on-change`` exit status when drift is found (like ``diff(1)``).
+EXIT_DRIFT = 1
+
+#: ``diff`` exit status for an unreadable snapshot (kept distinct from drift).
+EXIT_ERROR = 2
 
 
 @click.group()
@@ -198,6 +217,79 @@ def generate(
         f"{len(schema.dlos)} DLOs, "
         f"{len(schema.identity_rulesets)} Identity Rulesets"
     )
+
+
+@cli.command()
+@click.argument("old_snapshot", type=click.Path(exists=True, dir_okay=False))
+@click.argument("new_snapshot", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(DIFF_FORMATS),
+    default="markdown",
+    show_default=True,
+    help="Report format: human-readable Markdown or machine-readable JSON.",
+)
+@click.option(
+    "--output",
+    "output_path",
+    default=None,
+    type=click.Path(dir_okay=False),
+    help="Write the report to this file instead of stdout.",
+)
+@click.option(
+    "--fail-on-change",
+    is_flag=True,
+    default=False,
+    help=f"Exit with status {EXIT_DRIFT} when any drift is detected (for CI).",
+)
+def diff(
+    old_snapshot: str,
+    new_snapshot: str,
+    output_format: str,
+    output_path: str | None,
+    fail_on_change: bool,
+) -> None:
+    """Compare two JSON snapshots and report schema drift.
+
+    OLD_SNAPSHOT and NEW_SNAPSHOT are .json files written by
+    `generate --format json`. Reports added, removed and changed DMOs, DLOs,
+    fields, DLO -> DMO mappings and DMO relationships.
+    """
+    result = diff_schemas(_load_snapshot(old_snapshot), _load_snapshot(new_snapshot))
+    render = render_diff_json if output_format == "json" else render_diff_markdown
+    report = render(result)
+
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report, encoding="utf-8")
+        click.echo(f"Wrote {out.name}")
+    else:
+        click.echo(report, nl=False)
+
+    # Summary goes to stderr so stdout stays a clean report when piped.
+    if result.has_changes:
+        n = result.change_count
+        click.echo(f"Schema drift: {n} change{'s' if n != 1 else ''}", err=True)
+    else:
+        click.echo("No schema drift.", err=True)
+
+    if fail_on_change and result.has_changes:
+        raise SystemExit(EXIT_DRIFT)
+
+
+def _load_snapshot(path: str) -> OrgSchema:
+    """Load a snapshot file, turning any parse problem into a clean CLI error."""
+    try:
+        return load_json(Path(path).read_text(encoding="utf-8"))
+    except KeyError as exc:
+        message = f"missing required key {exc}"
+    except (ValueError, TypeError, AttributeError) as exc:
+        message = str(exc)
+    error = click.ClickException(f"Could not read snapshot {path}: {message}")
+    error.exit_code = EXIT_ERROR
+    raise error
 
 
 def _slug(value: str) -> str:

@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Added
+- **Schema drift detection**: `data360-autodoc diff OLD.json NEW.json` compares
+  two JSON snapshots and reports added / removed / changed DMOs and DLOs, their
+  fields (`type`, `is_key`, `key_qualifier`), DLO → DMO object and field
+  mappings, and DMO relationships (`cardinality`, `status`, label). No org
+  credentials needed — it only reads the snapshot files.
+- `diff --format markdown|json`: a human-readable Markdown report (fits a PR
+  comment or a GitHub Actions job summary) or a machine-readable JSON report
+  with `has_changes`, `change_count` and a per-area summary.
+- `diff --fail-on-change` exits `1` when drift is found, for CI gates; an
+  unreadable or incompatible snapshot exits `2`. `--output FILE` writes the
+  report to a file.
+- Example GitHub Actions workflow
+  (`examples/github-actions/data360-drift.yml`) that snapshots an org on a
+  schedule and fails on drift against a committed baseline.
+- Synthetic before/after snapshot fixtures (`tests/fixtures/acme-*.json`).
+
 ## [0.2.0] - 2026-06-26
 
 ### Added

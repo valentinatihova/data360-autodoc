@@ -1,0 +1,405 @@
+{
+  "snapshot_version": 1,
+  "org_name": "Acme Data Cloud",
+  "instance_url": "https://acme.my.salesforce.com",
+  "generated_at": "2026-10-08T06:00:00+00:00",
+  "dmos": [
+    {
+      "name": "ssot__Account__dlm",
+      "label": "Account",
+      "fields": [
+        {
+          "name": "ssot__Id__c",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__Name__c",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        }
+      ]
+    },
+    {
+      "name": "ssot__ContactPointEmail__dlm",
+      "label": "Contact Point Email",
+      "fields": [
+        {
+          "name": "ssot__EmailAddress__c",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__Id__c",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__PartyId__c",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        }
+      ]
+    },
+    {
+      "name": "ssot__Individual__dlm",
+      "label": "Individual",
+      "fields": [
+        {
+          "name": "ssot__BirthDate__c",
+          "type": "Date",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__FirstName__c",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__Id__c",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": null,
+          "type_inferred": false
+        }
+      ]
+    },
+    {
+      "name": "ssot__SalesOrder__dlm",
+      "label": "Sales Order",
+      "fields": [
+        {
+          "name": "ssot__AccountId__c",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__Id__c",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__SoldToCustomerId__c",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ssot__TotalAmount__c",
+          "type": "Number",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        }
+      ]
+    }
+  ],
+  "dlos": [
+    {
+      "name": "Account_CRM__dll",
+      "label": "Account (CRM)",
+      "fields": [
+        {
+          "name": "Id",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": "PrimaryKey",
+          "type_inferred": false
+        },
+        {
+          "name": "Name",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        }
+      ]
+    },
+    {
+      "name": "Contact_Home__dll",
+      "label": "Contact (Home)",
+      "fields": [
+        {
+          "name": "Birthdate",
+          "type": "Date",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "ContactId",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": "PrimaryKey",
+          "type_inferred": false
+        },
+        {
+          "name": "Email",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "FirstName",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        }
+      ]
+    },
+    {
+      "name": "Order_Home__dll",
+      "label": "Order (Home)",
+      "fields": [
+        {
+          "name": "AccountId",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "Amount",
+          "type": "Number",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "CustomerId",
+          "type": "Text",
+          "is_key": false,
+          "key_qualifier": null,
+          "type_inferred": false
+        },
+        {
+          "name": "OrderId",
+          "type": "Text",
+          "is_key": true,
+          "key_qualifier": "PrimaryKey",
+          "type_inferred": false
+        }
+      ]
+    }
+  ],
+  "cios": [],
+  "identity_rulesets": [],
+  "mappings": [
+    {
+      "source_dlo": "Account_CRM__dll",
+      "target_dmo": "ssot__Account__dlm"
+    },
+    {
+      "source_dlo": "Contact_Home__dll",
+      "target_dmo": "ssot__ContactPointEmail__dlm"
+    },
+    {
+      "source_dlo": "Contact_Home__dll",
+      "target_dmo": "ssot__Individual__dlm"
+    },
+    {
+      "source_dlo": "Order_Home__dll",
+      "target_dmo": "ssot__SalesOrder__dlm"
+    }
+  ],
+  "streams": [],
+  "field_mappings": [],
+  "dmo_field_mappings": [
+    {
+      "source_dlo_name": "Account_CRM__dll",
+      "source_dlo_label": "Account_CRM__dll",
+      "source_field_name": "Id",
+      "source_field_label": "Id",
+      "target_dmo_name": "ssot__Account__dlm",
+      "target_dmo_label": "ssot__Account__dlm",
+      "target_field_name": "ssot__Id__c",
+      "target_field_label": "ssot__Id__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Account_CRM__dll",
+      "source_dlo_label": "Account_CRM__dll",
+      "source_field_name": "Name",
+      "source_field_label": "Name",
+      "target_dmo_name": "ssot__Account__dlm",
+      "target_dmo_label": "ssot__Account__dlm",
+      "target_field_name": "ssot__Name__c",
+      "target_field_label": "ssot__Name__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Contact_Home__dll",
+      "source_dlo_label": "Contact_Home__dll",
+      "source_field_name": "ContactId",
+      "source_field_label": "ContactId",
+      "target_dmo_name": "ssot__ContactPointEmail__dlm",
+      "target_dmo_label": "ssot__ContactPointEmail__dlm",
+      "target_field_name": "ssot__PartyId__c",
+      "target_field_label": "ssot__PartyId__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Contact_Home__dll",
+      "source_dlo_label": "Contact_Home__dll",
+      "source_field_name": "Email",
+      "source_field_label": "Email",
+      "target_dmo_name": "ssot__ContactPointEmail__dlm",
+      "target_dmo_label": "ssot__ContactPointEmail__dlm",
+      "target_field_name": "ssot__EmailAddress__c",
+      "target_field_label": "ssot__EmailAddress__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Contact_Home__dll",
+      "source_dlo_label": "Contact_Home__dll",
+      "source_field_name": "Birthdate",
+      "source_field_label": "Birthdate",
+      "target_dmo_name": "ssot__Individual__dlm",
+      "target_dmo_label": "ssot__Individual__dlm",
+      "target_field_name": "ssot__BirthDate__c",
+      "target_field_label": "ssot__BirthDate__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Contact_Home__dll",
+      "source_dlo_label": "Contact_Home__dll",
+      "source_field_name": "ContactId",
+      "source_field_label": "ContactId",
+      "target_dmo_name": "ssot__Individual__dlm",
+      "target_dmo_label": "ssot__Individual__dlm",
+      "target_field_name": "ssot__Id__c",
+      "target_field_label": "ssot__Id__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Contact_Home__dll",
+      "source_dlo_label": "Contact_Home__dll",
+      "source_field_name": "FirstName",
+      "source_field_label": "FirstName",
+      "target_dmo_name": "ssot__Individual__dlm",
+      "target_dmo_label": "ssot__Individual__dlm",
+      "target_field_name": "ssot__FirstName__c",
+      "target_field_label": "ssot__FirstName__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Order_Home__dll",
+      "source_dlo_label": "Order_Home__dll",
+      "source_field_name": "AccountId",
+      "source_field_label": "AccountId",
+      "target_dmo_name": "ssot__SalesOrder__dlm",
+      "target_dmo_label": "ssot__SalesOrder__dlm",
+      "target_field_name": "ssot__AccountId__c",
+      "target_field_label": "ssot__AccountId__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Order_Home__dll",
+      "source_dlo_label": "Order_Home__dll",
+      "source_field_name": "Amount",
+      "source_field_label": "Amount",
+      "target_dmo_name": "ssot__SalesOrder__dlm",
+      "target_dmo_label": "ssot__SalesOrder__dlm",
+      "target_field_name": "ssot__TotalAmount__c",
+      "target_field_label": "ssot__TotalAmount__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Order_Home__dll",
+      "source_dlo_label": "Order_Home__dll",
+      "source_field_name": "CustomerId",
+      "source_field_label": "CustomerId",
+      "target_dmo_name": "ssot__SalesOrder__dlm",
+      "target_dmo_label": "ssot__SalesOrder__dlm",
+      "target_field_name": "ssot__SoldToCustomerId__c",
+      "target_field_label": "ssot__SoldToCustomerId__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    },
+    {
+      "source_dlo_name": "Order_Home__dll",
+      "source_dlo_label": "Order_Home__dll",
+      "source_field_name": "OrderId",
+      "source_field_label": "OrderId",
+      "target_dmo_name": "ssot__SalesOrder__dlm",
+      "target_dmo_label": "ssot__SalesOrder__dlm",
+      "target_field_name": "ssot__Id__c",
+      "target_field_label": "ssot__Id__c",
+      "data_source_field": null,
+      "business_label": null,
+      "manual_mapping": null
+    }
+  ],
+  "relationships": [
+    {
+      "source_dmo_name": "ssot__ContactPointEmail__dlm",
+      "source_dmo_label": "Contact Point Email",
+      "source_field": "ssot__PartyId__c",
+      "cardinality": "N:1",
+      "related_entity": "ssot__Individual__dlm",
+      "related_field": "ssot__Id__c",
+      "relationship_label": "CPEToIndividual",
+      "status": "INACTIVE"
+    },
+    {
+      "source_dmo_name": "ssot__SalesOrder__dlm",
+      "source_dmo_label": "Sales Order",
+      "source_field": "ssot__AccountId__c",
+      "cardinality": "N:1",
+      "related_entity": "ssot__Account__dlm",
+      "related_field": "ssot__Id__c",
+      "relationship_label": "SalesOrderToAccount",
+      "status": "ACTIVE"
+    },
+    {
+      "source_dmo_name": "ssot__SalesOrder__dlm",
+      "source_dmo_label": "Sales Order",
+      "source_field": "ssot__SoldToCustomerId__c",
+      "cardinality": "N:1",
+      "related_entity": "ssot__Individual__dlm",
+      "related_field": "ssot__Id__c",
+      "relationship_label": "SalesOrderToIndividual",
+      "status": "ACTIVE"
+    }
+  ]
+}
