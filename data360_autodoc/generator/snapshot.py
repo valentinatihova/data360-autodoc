@@ -1,8 +1,8 @@
 """JSON snapshot serializer for an OrgSchema.
 
-This is a first-class output format *and* the seam the paid drift-detection tier
-builds on. A run can write ``snapshot.json``; a later run can load yesterday's
-snapshot and diff it against today's freshly fetched schema. Because the
+This is a first-class output format *and* the drift-detection seam. A run can
+write ``snapshot.json``; ``data360-autodoc diff`` later loads two snapshots and
+reports what changed (see :mod:`data360_autodoc.diff`). Because the
 serialization is deterministic and round-trips losslessly
 (``from_dict(to_dict(s)) == s``), drift detection reduces to comparing two
 ``OrgSchema`` values.
