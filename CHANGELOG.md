@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-16
 
 ### Added
 - **Schema drift detection**: `data360-autodoc diff OLD.json NEW.json` compares
@@ -22,6 +22,10 @@ semantic versioning.
   (`examples/github-actions/data360-drift.yml`) that snapshots an org on a
   schedule and fails on drift against a committed baseline.
 - Synthetic before/after snapshot fixtures (`tests/fixtures/acme-*.json`).
+
+### Changed
+- Tests and `black --check` now run in GitHub Actions on Python 3.11–3.14 for
+  every pull request and push to `main`; the README badge shows the live status.
 
 ## [0.2.0] - 2026-06-26
 
