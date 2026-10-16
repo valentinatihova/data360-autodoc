@@ -1,0 +1,89 @@
+# Data 360 schema drift check for GitHub Actions.
+#
+# Copy this file to .github/workflows/data360-drift.yml in a repository that
+# holds a baseline snapshot of your org. On a schedule (and on demand) it
+# fetches a fresh snapshot, diffs it against the committed baseline, writes the
+# Markdown drift report to the job summary, and FAILS the run when the org's
+# schema has drifted — so a red run is your drift alert.
+#
+# One-time setup:
+#   1. Generate and commit a baseline snapshot:
+#        data360-autodoc generate ... --format json --output snapshots
+#      The file is named after the org (e.g. snapshots/acme-data-cloud.json);
+#      point BASELINE below at it.
+#   2. Add repository secrets (Settings → Secrets and variables → Actions):
+#        SF_INSTANCE_URL  https://<your-domain>.my.salesforce.com
+#        SF_CLIENT_ID     connected app consumer key
+#        SF_USERNAME      integration user the JWT bearer flow impersonates
+#        SF_PRIVATE_KEY   full text of the connected app's PEM private key
+#      (Sandbox? add --sandbox to the generate command.)
+#
+# Accepting drift: download the "data360-drift" artifact from the failed run,
+# replace the baseline with current/<org>.json, and commit it.
+
+name: Data 360 schema drift
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    env:
+      BASELINE: snapshots/acme-data-cloud.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install data360-autodoc
+        run: pip install "data360-autodoc>=0.3.0"
+
+      - name: Fetch current snapshot
+        env:
+          SF_INSTANCE_URL: ${{ secrets.SF_INSTANCE_URL }}
+          SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
+          SF_USERNAME: ${{ secrets.SF_USERNAME }}
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+        run: |
+          key="$RUNNER_TEMP/server.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$SF_PRIVATE_KEY" > "$key")
+          data360-autodoc generate \
+            --instance-url "$SF_INSTANCE_URL" \
+            --client-id "$SF_CLIENT_ID" \
+            --username "$SF_USERNAME" \
+            --private-key "$key" \
+            --format json \
+            --output current
+
+      - name: Diff against baseline
+        # Exit code 1 = drift detected (fails the job), 2 = unreadable snapshot.
+        run: |
+          data360-autodoc diff "$BASELINE" "current/$(basename "$BASELINE")" \
+            --output drift/drift.md \
+            --fail-on-change
+
+      - name: Publish drift report to the job summary
+        if: always()
+        run: |
+          if [ -f drift/drift.md ]; then
+            cat drift/drift.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload snapshot and report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: data360-drift
+          path: |
+            current/
+            drift/
+          if-no-files-found: ignore
