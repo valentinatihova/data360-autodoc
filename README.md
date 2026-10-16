@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/data360-autodoc)](https://pypi.org/project/data360-autodoc/)
 [![Python](https://img.shields.io/pypi/pyversions/data360-autodoc)](https://pypi.org/project/data360-autodoc/)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#)
+[![Tests](https://github.com/valentinatihova/data360-autodoc/actions/workflows/tests.yml/badge.svg)](https://github.com/valentinatihova/data360-autodoc/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 **Auto-generate human-readable documentation for Salesforce Data 360 (Data Cloud) orgs — in seconds, not days.**
