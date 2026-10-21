@@ -9,14 +9,16 @@ semantic versioning.
 ### Added
 - **Schema drift detection**: `data360-autodoc diff OLD.json NEW.json` compares
   two JSON snapshots and reports added / removed / changed DMOs and DLOs, their
-  fields (`type`, `is_key`, `key_qualifier`), DLO → DMO object and field
-  mappings, and DMO relationships (`cardinality`, `status`, label). No org
+  fields (`type`, `is_key`, `key_qualifier`), data streams and their
+  Stream → DLO field mappings, DLO → DMO object and field mappings, and DMO
+  relationships (`cardinality`, `status`, label). No org
   credentials needed — it only reads the snapshot files.
 - `diff --format markdown|json`: a human-readable Markdown report (fits a PR
   comment or a GitHub Actions job summary) or a machine-readable JSON report
   with `has_changes`, `change_count` and a per-area summary.
 - `diff --fail-on-change` exits `1` when drift is found, for CI gates; an
-  unreadable or incompatible snapshot exits `2`. `--output FILE` writes the
+  unreadable, malformed or incompatible snapshot (or an unwritable report)
+  exits `2`, so an error is never mistaken for drift. `--output FILE` writes the
   report to a file.
 - Example GitHub Actions workflow
   (`examples/github-actions/data360-drift.yml`) that snapshots an org on a
