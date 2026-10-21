@@ -55,11 +55,14 @@ def load_json(text: str) -> OrgSchema:
 
 def to_dict(schema: OrgSchema) -> dict[str, Any]:
     """Convert an :class:`~models.OrgSchema` to a plain, JSON-safe dict."""
+    # dmo_scope is written only when known, so pre-0.4 snapshots round-trip.
+    scope = {"dmo_scope": schema.dmo_scope} if schema.dmo_scope else {}
     return {
         "snapshot_version": SNAPSHOT_VERSION,
         "org_name": schema.org_name,
         "instance_url": schema.instance_url,
         "generated_at": schema.generated_at.isoformat(),
+        **scope,
         "dmos": [_object_to_dict(o) for o in schema.dmos],
         "dlos": [_object_to_dict(o) for o in schema.dlos],
         "cios": [
@@ -173,6 +176,7 @@ def from_dict(data: dict[str, Any]) -> OrgSchema:
         org_name=data["org_name"],
         instance_url=data["instance_url"],
         generated_at=datetime.fromisoformat(data["generated_at"]),
+        dmo_scope=data.get("dmo_scope"),
         dmos=tuple(
             DataModelObject(name=o["name"], label=o["label"], fields=_fields_from(o))
             for o in data.get("dmos", [])

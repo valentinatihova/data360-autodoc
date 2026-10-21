@@ -180,6 +180,8 @@ class SchemaDiff:
     relationships_added: tuple[Relationship, ...] = ()
     relationships_removed: tuple[Relationship, ...] = ()
     relationships_changed: tuple[RelationshipChange, ...] = ()
+    #: Caveats about the comparison itself (e.g. snapshots of different scope).
+    warnings: tuple[str, ...] = ()
 
     def summary(self) -> dict[str, dict[str, int]]:
         """Per-area ``added`` / ``removed`` / ``changed`` counts.
@@ -265,6 +267,13 @@ def diff_schemas(old: OrgSchema, new: OrgSchema) -> SchemaDiff:
         key=_relationship_key,
         attributes=RELATIONSHIP_ATTRIBUTES,
     )
+    warnings = ()
+    if old.dmo_scope and new.dmo_scope and old.dmo_scope != new.dmo_scope:
+        warnings = (
+            f"Snapshots cover different DMO scopes (old: {old.dmo_scope}, "
+            f"new: {new.dmo_scope}); added/removed DMOs may reflect the scope, "
+            "not the org. Re-run generate with the same --all-dmos setting.",
+        )
     return SchemaDiff(
         old=_info(old),
         new=_info(new),
@@ -283,6 +292,7 @@ def diff_schemas(old: OrgSchema, new: OrgSchema) -> SchemaDiff:
         relationships_added=rel_added,
         relationships_removed=rel_removed,
         relationships_changed=tuple(RelationshipChange(r, c) for r, c in rel_changed),
+        warnings=warnings,
     )
 
 

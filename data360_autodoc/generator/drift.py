@@ -65,6 +65,9 @@ def render_diff_markdown(diff: SchemaDiff) -> str:
     lines.append(f"_Old: {_snapshot_line(diff.old)}_  ")
     lines.append(f"_New: {_snapshot_line(diff.new)}_")
     lines.append("")
+    for warning in diff.warnings:
+        lines.append(f"> ⚠️ {_escape(warning)}")
+        lines.append("")
 
     if not diff.has_changes:
         lines.append("**No schema drift detected.**")
@@ -104,6 +107,7 @@ def diff_to_dict(diff: SchemaDiff) -> dict[str, Any]:
         "diff_report_version": DIFF_REPORT_VERSION,
         "old": _info_to_dict(diff.old),
         "new": _info_to_dict(diff.new),
+        "warnings": list(diff.warnings),
         "has_changes": diff.has_changes,
         "change_count": diff.change_count,
         "summary": diff.summary(),

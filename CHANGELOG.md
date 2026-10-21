@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+- `generate` failed on new orgs (for example a fresh Developer Edition with
+  ~1,000 standard DMOs). The DMO list was requested as one 500-row page (about
+  100 s, past the timeout). The endpoint returns no `nextPageUrl`, so DMOs past
+  the first page were silently missed. The list is now read in 100-row pages by
+  `offset`.
+- DMOs with no relationships (HTTP 204) or no DLO mappings (HTTP 404) were
+  skipped as errors after retries; they are now documented with empty sections.
+
+### Added
+- `generate --all-dmos` documents every DMO. The default is enabled standard
+  DMOs plus all custom DMOs (previously custom DMOs that were not enabled were
+  dropped). The snapshot records the choice as `dmo_scope`, and `diff` warns
+  (Markdown, JSON `warnings`, stderr) when two snapshots used different scopes.
+
 ## [0.3.0] - 2026-10-21
 
 ### Added

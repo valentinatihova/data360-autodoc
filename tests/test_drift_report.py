@@ -150,6 +150,21 @@ def test_markdown_header_names_both_orgs_when_they_differ() -> None:
     assert md.startswith("# Data 360 Schema Drift — Acme Production → Acme Sandbox\n")
 
 
+def test_scope_warning_in_markdown_json_and_cli(tmp_path: Path) -> None:
+    data = json.loads(Path(AFTER).read_text(encoding="utf-8"))
+    old, new = tmp_path / "old.json", tmp_path / "new.json"
+    old.write_text(json.dumps({**data, "dmo_scope": "all"}), encoding="utf-8")
+    new.write_text(json.dumps({**data, "dmo_scope": "enabled"}), encoding="utf-8")
+    result = _runner().invoke(cli, ["diff", str(old), str(new)])
+    assert result.exit_code == 0, result.output
+    assert "> ⚠️ Snapshots cover different DMO scopes" in result.stdout
+    assert "Warning: Snapshots cover different DMO scopes" in result.stderr
+    json_result = _runner().invoke(
+        cli, ["diff", str(old), str(new), "--format", "json"]
+    )
+    assert json.loads(json_result.stdout)["warnings"]
+
+
 def test_markdown_is_deterministic() -> None:
     assert render_diff_markdown(_fixture_diff()) == render_diff_markdown(
         _fixture_diff()

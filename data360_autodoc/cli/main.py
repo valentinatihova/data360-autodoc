@@ -118,6 +118,13 @@ def cli() -> None:
     type=float,
     help="Per-request timeout (seconds) for metadata calls. Data Cloud is slow.",
 )
+@click.option(
+    "--all-dmos",
+    is_flag=True,
+    default=False,
+    help="Document every DMO, including disabled standard ones "
+    "(default: enabled and custom DMOs only).",
+)
 def generate(
     instance_url: str,
     access_token: str | None,
@@ -129,6 +136,7 @@ def generate(
     sandbox: bool,
     api_version: str | None,
     timeout: float,
+    all_dmos: bool,
 ) -> None:
     """Fetch an org's metadata and write documentation artifacts."""
     if access_token:
@@ -180,6 +188,7 @@ def generate(
             api_version=api_version,
             timeout=timeout,
             progress=_progress,
+            all_dmos=all_dmos,
         )
     except MetadataError as exc:
         # Surface a clean one-line error and exit non-zero — never a traceback.
@@ -278,6 +287,8 @@ def diff(
         click.echo(report, nl=False)
 
     # Summary goes to stderr so stdout stays a clean report when piped.
+    for warning in result.warnings:
+        click.echo(f"Warning: {warning}", err=True)
     if result.has_changes:
         n = result.change_count
         click.echo(f"Schema drift: {n} change{'s' if n != 1 else ''}", err=True)

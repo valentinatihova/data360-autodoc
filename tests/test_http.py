@@ -23,3 +23,11 @@ def test_non_json_200_becomes_fetch_error() -> None:
     )
     with pytest.raises(FetchError, match="Non-JSON"):
         get_json(URL, access_token="TOK", timeout=5.0)
+
+
+@responses.activate
+def test_204_no_content_is_an_empty_result_not_retried() -> None:
+    # Data 360 answers a DMO with no relationships with 204 No Content.
+    responses.add(responses.GET, URL, status=204)
+    assert get_json(URL, access_token="TOK", timeout=5) == {}
+    assert len(responses.calls) == 1
