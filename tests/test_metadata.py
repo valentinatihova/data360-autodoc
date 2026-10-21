@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 import responses
+from responses import matchers
 
 from data360_autodoc.fetcher import metadata
 from data360_autodoc.models import Mapping
@@ -415,56 +416,104 @@ def test_relationships_labels_and_dlo_type_inference() -> None:
     assert by_field["ssot__PartyId__c"].type_inferred is False
 
 
-@responses.activate
-def test_dmo_list_pagination_and_sorting() -> None:
-    # Two pages of DMOs; Zeta arrives first, Alpha second.
+def _dmo_page(offset: int, *entries: dict) -> None:
     responses.add(
         responses.GET,
         f"{SSOT}/data-model-objects",
-        json={
-            "dataModelObject": [
-                {"name": "Zeta__dmo", "label": "Zeta", "isEnabled": True}
-            ],
-            "nextPageUrl": f"/services/data/{API}/ssot/data-model-objects?page=2",
-        },
+        json={"dataModelObject": list(entries)},
         status=200,
+        match=[
+            matchers.query_param_matcher(
+                {"limit": str(metadata._DMO_PAGE_SIZE), "offset": str(offset)}
+            )
+        ],
     )
-    responses.add(
-        responses.GET,
-        f"{SSOT}/data-model-objects",
-        json={
-            "dataModelObject": [
-                {"name": "Alpha__dmo", "label": "Alpha", "isEnabled": True}
-            ]
-        },
-        status=200,
-    )
+
+
+def _empty_details(*names: str) -> None:
     responses.add(
         responses.GET,
         f"{SSOT}/data-model-object-mappings",
         json={"objectSourceTargetMaps": []},
         status=200,
     )
-    responses.add(
-        responses.GET,
-        f"{SSOT}/data-model-objects/Zeta__dmo/relationships",
-        json={"relationships": []},
-        status=200,
-    )
-    responses.add(
-        responses.GET,
-        f"{SSOT}/data-model-objects/Alpha__dmo/relationships",
-        json={"relationships": []},
-        status=200,
-    )
+    for name in names:
+        responses.add(
+            responses.GET,
+            f"{SSOT}/data-model-objects/{name}/relationships",
+            json={"relationships": []},
+            status=200,
+        )
     responses.add(
         responses.GET, f"{SSOT}/data-streams", json={"dataStreams": []}, status=200
     )
+
+
+@responses.activate
+def test_dmo_list_pagination_and_sorting(monkeypatch) -> None:
+    # The endpoint has no nextPageUrl: it pages by offset until a short page.
+    monkeypatch.setattr(metadata, "_DMO_PAGE_SIZE", 1)
+    _dmo_page(0, {"name": "Zeta__dmo", "label": "Zeta", "isEnabled": True})
+    _dmo_page(1, {"name": "Alpha__dmo", "label": "Alpha", "isEnabled": True})
+    _dmo_page(2)
+    _empty_details("Zeta__dmo", "Alpha__dmo")
 
     schema = _fetch()
 
     # Both pages fetched; output sorted alphabetically (deterministic).
     assert [d.name for d in schema.dmos] == ["Alpha__dmo", "Zeta__dmo"]
+    assert schema.dmo_scope == metadata.DMO_SCOPE_ENABLED
+
+
+@responses.activate
+def test_dmo_list_stops_when_offset_is_ignored(monkeypatch) -> None:
+    # An API that ignores offset would return page 1 forever.
+    monkeypatch.setattr(metadata, "_DMO_PAGE_SIZE", 1)
+    responses.add(
+        responses.GET,
+        f"{SSOT}/data-model-objects",
+        json={"dataModelObject": [{"name": "A__dmo", "isEnabled": True}]},
+        status=200,
+    )
+    _empty_details("A__dmo")
+
+    schema = _fetch()
+
+    assert [d.name for d in schema.dmos] == ["A__dmo"]
+    dmo_list_calls = [
+        c for c in responses.calls if c.request.url.split("?")[0].endswith("objects")
+    ]
+    assert len(dmo_list_calls) == 2  # page 2 repeated page 1 -> stop
+
+
+_SCOPE_PAGE = (
+    {"name": "Used__dmo", "isEnabled": True, "creationType": "Standard"},
+    {"name": "Unused__dmo", "isEnabled": False, "creationType": "Standard"},
+    {"name": "Mine__dlm", "isEnabled": False, "creationType": "Custom"},
+)
+
+
+@responses.activate
+def test_default_scope_is_enabled_and_custom_dmos() -> None:
+    _dmo_page(0, *_SCOPE_PAGE)
+    _empty_details("Used__dmo", "Mine__dlm")
+
+    schema = _fetch()
+
+    assert [d.name for d in schema.dmos] == ["Mine__dlm", "Used__dmo"]
+
+
+@responses.activate
+def test_all_dmos_includes_disabled_standard_dmos() -> None:
+    _dmo_page(0, *_SCOPE_PAGE)
+    _empty_details("Used__dmo", "Unused__dmo", "Mine__dlm")
+
+    schema = metadata.fetch_metadata(
+        instance_url=INSTANCE_URL, access_token="TOK", api_version=API, all_dmos=True
+    )
+
+    assert [d.name for d in schema.dmos] == ["Mine__dlm", "Unused__dmo", "Used__dmo"]
+    assert schema.dmo_scope == metadata.DMO_SCOPE_ALL
 
 
 @responses.activate
@@ -543,3 +592,29 @@ def test_progress_callback_is_invoked() -> None:
     assert any("1/1" in m for m in msgs)  # per-DMO inline counter
     assert any("data streams" in m.lower() for m in msgs)  # phase line
     assert any(inline for _, inline in events)  # at least one in-place update
+
+
+@responses.activate
+def test_dmo_without_mappings_404_is_kept_not_skipped() -> None:
+    _dmo_page(0, {"name": "Mine__dlm", "isEnabled": True, "creationType": "Custom"})
+    responses.add(
+        responses.GET,
+        f"{SSOT}/data-model-object-mappings",
+        json=[
+            {"errorCode": "NOT_FOUND", "message": "Object Source Target Map not found"}
+        ],
+        status=404,
+    )
+    responses.add(
+        responses.GET,
+        f"{SSOT}/data-model-objects/Mine__dlm/relationships",
+        status=204,
+    )
+    responses.add(
+        responses.GET, f"{SSOT}/data-streams", json={"dataStreams": []}, status=200
+    )
+
+    schema = _fetch()
+
+    assert [d.name for d in schema.dmos] == ["Mine__dlm"]
+    assert schema.mappings == ()

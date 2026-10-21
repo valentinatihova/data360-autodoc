@@ -43,21 +43,26 @@ The tool picks the **numerically highest** version and uses it for every
 
 ## 3. Data Model Objects (DMOs)
 
-`GET .../v{version}/ssot/data-model-objects?limit=500`
+`GET .../v{version}/ssot/data-model-objects?limit=100&offset={n}`
 
 ```json
 {
   "dataModelObject": [
-    { "name": "Individual__dmo", "label": "Individual", "isEnabled": true }
-  ],
-  "nextPageUrl": "/services/data/v66.0/ssot/data-model-objects?page=2"
+    { "name": "ssot__Individual__dlm", "label": "Individual", "isEnabled": true,
+      "creationType": "Standard", "category": "PROFILE" }
+  ]
 }
 ```
 
-- Paginated via `nextPageUrl` (absolute or relative; absent on the last page).
-- `isEnabled: false` entries are filtered out.
-- Capped at **500** DMOs; if the org has more enabled DMOs, a `WARNING` is logged
-  and the rest are omitted.
+- Verified on a live Developer Edition (v68.0, 2026-10-21): the response has **no
+  `nextPageUrl`**. It pages by `offset`, and a short page is the last one. A new
+  org lists ~1,046 standard DMOs, almost all `isEnabled: false`.
+- Latency grows with the page size (~0.2 s per DMO: 50 rows ≈ 8 s, 200 ≈ 40 s,
+  500 ≈ 100 s), so the tool reads 100-row pages.
+- Default scope: `isEnabled != false` **or** `creationType == "Custom"`.
+  `--all-dmos` keeps everything.
+- Capped at **500** matching DMOs; if more match, a `WARNING` is logged and the
+  rest are omitted.
 
 ## 4. DLO → DMO mappings (per DMO)
 
@@ -79,6 +84,9 @@ The tool picks the **numerically highest** version and uses it for every
   `Mapping` (deduplicated across DMOs).
 - `fieldMappings[].targetFieldDeveloperName` becomes a DMO field with type
   `Unknown` (type comes from relationships, below).
+
+- A DMO with **no DLO mapping** (e.g. a new custom DMO) answers **404**
+  `NOT_FOUND` "Object Source Target Map not found": treated as no mappings.
 
 ## 5. DMO relationships + field types (per DMO)
 
@@ -111,6 +119,9 @@ nested `sourceObject`/`targetObject`; the queried DMO may be **either** side:
   field, and only when `status == "ACTIVE"` (or absent). In practice these types
   are generic (`MktDataModelField`), so the real DMO type source is the mapped
   DLO field type (see `_enrich_dmo_field_types`).
+
+- A DMO with **no relationships** answers **204 No Content** (empty body):
+  treated as an empty list, not retried.
 
 ## 6. Data Lake Objects (DLOs), from data streams
 

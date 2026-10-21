@@ -21,6 +21,10 @@ class FetchError(RuntimeError):
     """Raised when a Data 360 API request fails (4xx, or retries exhausted)."""
 
 
+class NotFoundError(FetchError):
+    """A 404: the requested resource does not exist (callers may treat as empty)."""
+
+
 def get_json(url: str, *, access_token: str, timeout: float) -> Any:
     """GET ``url`` with bearer auth, retrying transient failures.
 
@@ -46,6 +50,10 @@ def get_json(url: str, *, access_token: str, timeout: float) -> Any:
         except requests.RequestException as exc:
             last_error = str(exc)
         else:
+            if response.status_code == 204:
+                # Data 360 answers "nothing here" (e.g. a DMO with no
+                # relationships) with 204 No Content: an empty result, not an error.
+                return {}
             if response.status_code == 200:
                 try:
                     return response.json()
@@ -57,7 +65,8 @@ def get_json(url: str, *, access_token: str, timeout: float) -> Any:
                         f"Non-JSON 200 response from {url}: {exc}"
                     ) from exc
             if 400 <= response.status_code < 500:
-                raise FetchError(
+                error = NotFoundError if response.status_code == 404 else FetchError
+                raise error(
                     f"Request rejected ({response.status_code}) for {url}: "
                     f"{response.text[:500]}"
                 )

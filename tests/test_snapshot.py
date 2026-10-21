@@ -82,6 +82,16 @@ def test_round_trip_is_lossless() -> None:
     assert load_json(render_json(schema)) == schema
 
 
+def test_dmo_scope_round_trips_and_is_omitted_when_unknown() -> None:
+    from dataclasses import replace
+
+    scoped = replace(_schema(), dmo_scope="enabled")
+    assert load_json(render_json(scoped)) == scoped
+    assert '"dmo_scope": "enabled"' in render_json(scoped)
+    # Pre-0.4 snapshots have no scope; they must serialize exactly as before.
+    assert "dmo_scope" not in render_json(_schema())
+
+
 def test_round_trip_empty_schema() -> None:
     schema = OrgSchema(
         org_name="Empty",

@@ -4,7 +4,7 @@ The real Data 360 Connect REST API has no single metadata endpoint — the org
 schema is assembled from several ``/ssot/*`` calls (verified against a live org;
 see ``agent_docs/api_reference.md``):
 
-    DMOs            GET /ssot/data-model-objects?limit=500
+    DMOs            GET /ssot/data-model-objects?limit=100&offset=..  (paged)
     DLO→DMO maps    GET /ssot/data-model-object-mappings?dataspace=..&dmoDeveloperName=..
     DLOs + fields   GET /ssot/data-streams           (delegated to streams.py)
 
@@ -20,8 +20,14 @@ from __future__ import annotations
 import logging
 from dataclasses import replace
 from typing import Any, Callable, Final
+from urllib.parse import urlencode
 
-from data360_autodoc.fetcher._http import FetchError, get_json, iter_pages
+from data360_autodoc.fetcher._http import (
+    FetchError,
+    NotFoundError,
+    get_json,
+    iter_pages,
+)
 from data360_autodoc.models import (
     DataModelObject,
     DmoFieldMapping,
@@ -51,6 +57,14 @@ DEFAULT_API_VERSION: Final = "v62.0"
 DEFAULT_DATASPACE: Final = "default"
 #: Safety cap on DMOs processed (each costs a mappings + relationships call).
 _MAX_DMOS: Final = 500
+#: DMO list page size. The endpoint takes ~0.2 s per DMO (live org, v68.0), so a
+#: 500-row page exceeds the 60 s timeout; 100 rows stay well under it.
+_DMO_PAGE_SIZE: Final = 100
+#: Guard against an API that ignores ``offset`` (would loop forever).
+_MAX_DMO_PAGES: Final = 200
+#: ``OrgSchema.dmo_scope`` values: enabled + custom DMOs (default) or every DMO.
+DMO_SCOPE_ENABLED: Final = "enabled"
+DMO_SCOPE_ALL: Final = "all"
 
 
 class MetadataError(RuntimeError):
@@ -106,6 +120,7 @@ def fetch_metadata(
     org_name: str | None = None,
     timeout: float = 60.0,
     progress: ProgressFn | None = None,
+    all_dmos: bool = False,
 ) -> OrgSchema:
     """Fetch and normalize the full org schema from the Connect REST API.
 
@@ -118,6 +133,8 @@ def fetch_metadata(
         dataspace: Data Cloud dataspace name.
         org_name: Optional document-title override; defaults to the instance host.
         timeout: Per-request timeout in seconds.
+        all_dmos: Document every DMO, including the disabled standard ones a new
+            org lists by the hundred. Default: enabled and custom DMOs only.
 
     Returns:
         A sorted :class:`~models.OrgSchema`.
@@ -136,7 +153,9 @@ def fetch_metadata(
         progress(f"Using API version {api_version}", False)
 
     try:
-        dmo_entries = _fetch_dmo_list(base, api_version, access_token, timeout)
+        dmo_entries = _fetch_dmo_list(
+            base, api_version, access_token, timeout, all_dmos=all_dmos
+        )
         if progress:
             progress(f"Found {len(dmo_entries)} DMO(s); fetching metadata…", False)
         dmos, mappings, dmo_field_mappings, relationships, skipped = _fetch_dmo_details(
@@ -183,35 +202,49 @@ def fetch_metadata(
         field_mappings=field_mappings,
         dmo_field_mappings=tuple(dmo_field_mappings),
         relationships=tuple(relationships),
+        dmo_scope=DMO_SCOPE_ALL if all_dmos else DMO_SCOPE_ENABLED,
     )
 
 
 def _fetch_dmo_list(
-    base: str, api_version: str, access_token: str, timeout: float
+    base: str,
+    api_version: str,
+    access_token: str,
+    timeout: float,
+    *,
+    all_dmos: bool = False,
 ) -> list[tuple[str, str]]:
-    """Return ``(name, label)`` for every enabled DMO.
+    """Return ``(name, label)`` for every enabled or custom DMO (or all of them).
 
-    Capped at :data:`_MAX_DMOS`; logs a WARNING (so the omission is never silent)
-    if the org has more enabled DMOs than the cap.
+    The endpoint returns no ``nextPageUrl``; it pages by ``offset``, so this
+    walks pages until a short one. Capped at :data:`_MAX_DMOS`; logs a WARNING
+    (so the omission is never silent) if more DMOs match than the cap.
     """
-    url = f"{base}/services/data/{api_version}/ssot/data-model-objects?limit=500"
+    url = f"{base}/services/data/{api_version}/ssot/data-model-objects"
     out: list[tuple[str, str]] = []
+    seen: set[str] = set()
     truncated = False
-    for page in iter_pages(
-        url, base_url=base, access_token=access_token, timeout=timeout
-    ):
-        for entry in page.get("dataModelObject", []):
-            if entry.get("isEnabled") is False:
-                continue
+    for page_no in range(_MAX_DMO_PAGES):
+        query = urlencode({"limit": _DMO_PAGE_SIZE, "offset": page_no * _DMO_PAGE_SIZE})
+        entries = get_json(
+            f"{url}?{query}", access_token=access_token, timeout=timeout
+        ).get("dataModelObject", [])
+        names = [e.get("name") for e in entries]
+        if names and names[0] in seen:
+            break  # offset ignored: the API repeated a page
+        for entry in entries:
             name = entry.get("name")
-            if not name:
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            if not (all_dmos or _is_documented(entry)):
                 continue
             if len(out) >= _MAX_DMOS:
                 # A valid DMO exists beyond the cap -> genuine truncation.
                 truncated = True
                 break
             out.append((name, entry.get("label") or name))
-        if truncated:
+        if truncated or len(entries) < _DMO_PAGE_SIZE:
             break
     if truncated:
         logger.warning(
@@ -219,6 +252,11 @@ def _fetch_dmo_list(
             _MAX_DMOS,
         )
     return out
+
+
+def _is_documented(entry: dict[str, Any]) -> bool:
+    """Default scope: DMOs the org uses (enabled) plus every custom DMO."""
+    return entry.get("isEnabled") is not False or entry.get("creationType") == "Custom"
 
 
 # Verified shape of one relationship (live org, v67.0 — see
@@ -513,7 +551,12 @@ def _fetch_dmo_mappings(
         f"{base}/services/data/{api_version}/ssot/data-model-object-mappings"
         f"?dataspace={dataspace}&dmoDeveloperName={dmo_name}"
     )
-    body = get_json(url, access_token=access_token, timeout=timeout)
+    try:
+        body = get_json(url, access_token=access_token, timeout=timeout)
+    except NotFoundError:
+        # A DMO with no DLO mapping (e.g. a new custom DMO) answers 404
+        # "Object Source Target Map not found": no mappings, not a failure.
+        body = {}
     maps: list[Mapping] = []
     seen: set[tuple[str, str]] = set()
     fields: dict[str, FieldDef] = {}

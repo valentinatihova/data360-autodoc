@@ -202,6 +202,9 @@ class OrgSchema:
     field_mappings: tuple[FieldMapping, ...] = ()
     dmo_field_mappings: tuple[DmoFieldMapping, ...] = ()
     relationships: tuple[Relationship, ...] = ()
+    #: Which DMOs were fetched: ``"enabled"`` (enabled + custom) or ``"all"``.
+    #: ``None`` for snapshots written before 0.4.0.
+    dmo_scope: str | None = None
 
     @classmethod
     def build(
@@ -219,6 +222,7 @@ class OrgSchema:
         dmo_field_mappings: tuple[DmoFieldMapping, ...] = (),
         relationships: tuple[Relationship, ...] = (),
         generated_at: datetime | None = None,
+        dmo_scope: str | None = None,
     ) -> "OrgSchema":
         """Assemble an :class:`OrgSchema`, sorting every collection.
 
@@ -274,4 +278,6 @@ class OrgSchema:
         )
         if generated_at is not None:
             kwargs["generated_at"] = generated_at
+        if dmo_scope is not None:
+            kwargs["dmo_scope"] = dmo_scope
         return cls(**kwargs)

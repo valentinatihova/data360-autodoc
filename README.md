@@ -45,6 +45,7 @@ Authentication uses the **OAuth 2.0 JWT Bearer flow** (connected app + private k
 **Options that affect the metadata fetch:**
 
 - `--sandbox` — authenticate against `test.salesforce.com` (sandbox / scratch orgs).
+- `--all-dmos` — document every DMO. By default only the DMOs your org uses are documented: **enabled** standard DMOs plus all **custom** DMOs. A new org lists about a thousand disabled standard DMOs, which would only add empty tables. The choice is recorded in the JSON snapshot, and `diff` warns if two snapshots used different settings.
 - `--api-version` — the Salesforce REST API version used for the `/ssot/*` metadata calls (e.g. `v62.0`). **By default the tool auto-detects your org's highest supported version** (from `GET /services/data/`), so you normally don't set this. Force it only if auto-detection picks a version where a Data Cloud endpoint misbehaves, or to pin output to a specific version. It must be a valid Salesforce REST API version your org supports.
 
 (The `Identity Rulesets` count is currently always `0` — see "Not supported yet" below.)
@@ -117,7 +118,7 @@ Under the hood it calls the **Data 360 Connect REST API** (`/services/data/v…/
 
 **Not supported yet.** Calculated Insights and Identity Resolution rulesets are **not fetched** — those sections render as empty placeholders (e.g. `_No Calculated Insights found._`) and the `Identity Rulesets` count stays `0`. Documenting them is on the roadmap. (Profile and Engagement DMOs *are* covered — those are DMO categories, not separate entities.)
 
-**Resilient by default.** If one DMO's metadata can't be read, that DMO is skipped with a warning and the rest of the document is still produced. If the org has more than 500 DMOs, the list is capped (with a warning). A failure fetching the DMO list or the data streams stops the run with a clean one-line error — never a stack trace.
+**Resilient by default.** If one DMO's metadata can't be read, that DMO is skipped with a warning and the rest of the document is still produced. If more than 500 DMOs match, the list is capped (with a warning). A DMO with no relationships or no DLO mappings is documented with empty sections, not skipped. A failure fetching the DMO list or the data streams stops the run with a clean one-line error — never a stack trace.
 
 ## Drift detection
 

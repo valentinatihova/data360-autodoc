@@ -344,3 +344,16 @@ def test_fixture_pair_summary() -> None:
 def test_fixture_against_itself_is_clean() -> None:
     snapshot = _fixture("acme-after.json")
     assert not diff_schemas(snapshot, snapshot).has_changes
+
+
+def test_different_dmo_scopes_warn() -> None:
+    old = replace(_schema(), dmo_scope="all")
+    new = replace(_schema(), dmo_scope="enabled")
+    (warning,) = diff_schemas(old, new).warnings
+    assert "different DMO scopes (old: all, new: enabled)" in warning
+
+
+def test_unknown_or_equal_scope_does_not_warn() -> None:
+    legacy, enabled = _schema(), replace(_schema(), dmo_scope="enabled")
+    assert diff_schemas(legacy, enabled).warnings == ()
+    assert diff_schemas(enabled, enabled).warnings == ()
