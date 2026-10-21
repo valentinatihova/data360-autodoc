@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime, timezone
 from typing import Any
 
 from data360_autodoc.diff import (
@@ -35,14 +34,8 @@ from data360_autodoc.diff import (
     SnapshotInfo,
     ValueChange,
 )
-from data360_autodoc.generator.markdown import _escape
-from data360_autodoc.models import (
-    DmoFieldMapping,
-    FieldDef,
-    FieldMapping,
-    Mapping,
-    Relationship,
-)
+from data360_autodoc.generator.markdown import _escape, _timestamp
+from data360_autodoc.models import FieldDef, FieldMapping, Relationship
 
 #: Bump when the JSON report shape changes incompatibly.
 DIFF_REPORT_VERSION = 1
@@ -64,7 +57,10 @@ _SUMMARY_ROWS = (
 def render_diff_markdown(diff: SchemaDiff) -> str:
     """Render a :class:`~diff.SchemaDiff` as a Markdown change report."""
     lines: list[str] = []
-    lines.append(f"# Data 360 Schema Drift — {_escape(diff.new.org_name)}")
+    org = diff.new.org_name
+    if diff.old.org_name != org:
+        org = f"{diff.old.org_name} → {org}"
+    lines.append(f"# Data 360 Schema Drift — {_escape(org)}")
     lines.append("")
     lines.append(f"_Old: {_snapshot_line(diff.old)}_  ")
     lines.append(f"_New: {_snapshot_line(diff.new)}_")
@@ -119,7 +115,7 @@ def diff_to_dict(diff: SchemaDiff) -> dict[str, Any]:
             "changed": [
                 {
                     "name": c.stream.name,
-                    "changes": [_change_to_dict(v) for v in c.changes],
+                    "changes": [asdict(v) for v in c.changes],
                 }
                 for c in diff.streams_changed
             ],
@@ -131,26 +127,26 @@ def diff_to_dict(diff: SchemaDiff) -> dict[str, Any]:
                 {
                     "stream_name": c.mapping.stream_name,
                     "dlo_field_name": c.mapping.dlo_field_name,
-                    "changes": [_change_to_dict(v) for v in c.changes],
+                    "changes": [asdict(v) for v in c.changes],
                 }
                 for c in diff.stream_fields_changed
             ],
         },
         "mappings": {
-            "added": [_mapping_to_dict(m) for m in diff.mappings_added],
-            "removed": [_mapping_to_dict(m) for m in diff.mappings_removed],
+            "added": [asdict(m) for m in diff.mappings_added],
+            "removed": [asdict(m) for m in diff.mappings_removed],
         },
         "field_mappings": {
-            "added": [_field_mapping_to_dict(m) for m in diff.field_mappings_added],
-            "removed": [_field_mapping_to_dict(m) for m in diff.field_mappings_removed],
+            "added": [asdict(m) for m in diff.field_mappings_added],
+            "removed": [asdict(m) for m in diff.field_mappings_removed],
         },
         "relationships": {
-            "added": [_relationship_to_dict(r) for r in diff.relationships_added],
-            "removed": [_relationship_to_dict(r) for r in diff.relationships_removed],
+            "added": [asdict(r) for r in diff.relationships_added],
+            "removed": [asdict(r) for r in diff.relationships_removed],
             "changed": [
                 {
-                    **_relationship_to_dict(c.relationship),
-                    "changes": [_change_to_dict(v) for v in c.changes],
+                    **asdict(c.relationship),
+                    "changes": [asdict(v) for v in c.changes],
                 }
                 for c in diff.relationships_changed
             ],
@@ -165,10 +161,6 @@ def diff_to_dict(diff: SchemaDiff) -> dict[str, Any]:
 
 def _snapshot_line(info: SnapshotInfo) -> str:
     return f"{_timestamp(info.generated_at)} · {_escape(info.instance_url)}"
-
-
-def _timestamp(value: datetime) -> str:
-    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _render_objects(title: str, objects: ObjectDiff) -> list[str]:
@@ -403,49 +395,22 @@ def _info_to_dict(info: SnapshotInfo) -> dict[str, Any]:
     }
 
 
-def _field_to_dict(f: FieldDef) -> dict[str, Any]:
-    return {
-        "name": f.name,
-        "type": f.type,
-        "is_key": f.is_key,
-        "key_qualifier": f.key_qualifier,
-    }
-
-
-def _change_to_dict(change: ValueChange) -> dict[str, Any]:
-    return {"attribute": change.attribute, "old": change.old, "new": change.new}
-
-
 def _objects_to_dict(objects: ObjectDiff) -> dict[str, Any]:
     return {
-        "added": [
-            {
-                "name": o.name,
-                "label": o.label,
-                "fields": [_field_to_dict(f) for f in o.fields],
-            }
-            for o in objects.added
-        ],
-        "removed": [
-            {
-                "name": o.name,
-                "label": o.label,
-                "fields": [_field_to_dict(f) for f in o.fields],
-            }
-            for o in objects.removed
-        ],
+        "added": [asdict(o) for o in objects.added],
+        "removed": [asdict(o) for o in objects.removed],
         "changed": [
             {
                 "name": c.name,
                 "label": c.label,
-                "changes": [_change_to_dict(v) for v in c.changes],
+                "changes": [asdict(v) for v in c.changes],
                 "fields": {
-                    "added": [_field_to_dict(f) for f in c.added_fields],
-                    "removed": [_field_to_dict(f) for f in c.removed_fields],
+                    "added": [asdict(f) for f in c.added_fields],
+                    "removed": [asdict(f) for f in c.removed_fields],
                     "changed": [
                         {
                             "name": fc.name,
-                            "changes": [_change_to_dict(v) for v in fc.changes],
+                            "changes": [asdict(v) for v in fc.changes],
                         }
                         for fc in c.changed_fields
                     ],
@@ -453,29 +418,4 @@ def _objects_to_dict(objects: ObjectDiff) -> dict[str, Any]:
             }
             for c in objects.changed
         ],
-    }
-
-
-def _mapping_to_dict(m: Mapping) -> dict[str, Any]:
-    return {"source_dlo": m.source_dlo, "target_dmo": m.target_dmo}
-
-
-def _field_mapping_to_dict(m: DmoFieldMapping) -> dict[str, Any]:
-    return {
-        "source_dlo_name": m.source_dlo_name,
-        "source_field_name": m.source_field_name,
-        "target_dmo_name": m.target_dmo_name,
-        "target_field_name": m.target_field_name,
-    }
-
-
-def _relationship_to_dict(r: Relationship) -> dict[str, Any]:
-    return {
-        "source_dmo_name": r.source_dmo_name,
-        "source_field": r.source_field,
-        "related_entity": r.related_entity,
-        "related_field": r.related_field,
-        "cardinality": r.cardinality,
-        "status": r.status,
-        "relationship_label": r.relationship_label,
     }

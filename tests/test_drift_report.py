@@ -142,6 +142,14 @@ def test_streams_in_markdown_and_json() -> None:
     assert data["stream_fields"]["changed"][0]["dlo_field_name"] == "Amount__c"
 
 
+def test_markdown_header_names_both_orgs_when_they_differ() -> None:
+    ts = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    prod = OrgSchema("Acme Production", "https://acme.my.salesforce.com", ts)
+    sandbox = replace(prod, org_name="Acme Sandbox")
+    md = render_diff_markdown(diff_schemas(prod, sandbox))
+    assert md.startswith("# Data 360 Schema Drift — Acme Production → Acme Sandbox\n")
+
+
 def test_markdown_is_deterministic() -> None:
     assert render_diff_markdown(_fixture_diff()) == render_diff_markdown(
         _fixture_diff()

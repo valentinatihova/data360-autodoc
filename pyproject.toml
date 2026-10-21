@@ -36,7 +36,8 @@ Issues = "https://github.com/valentinatihova/data360-autodoc/issues"
 dev = [
     "pytest>=8.0",
     "responses>=0.25",
-    "black>=24.0",
+    # Black changes its stable style each January: bump this once a year.
+    "black>=26.1,<27",
 ]
 
 [project.scripts]

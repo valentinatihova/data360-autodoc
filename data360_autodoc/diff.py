@@ -31,6 +31,7 @@ as a ``type`` change). A missing value and an empty string compare equal.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import cached_property
 from datetime import datetime
 from typing import Any, Callable, Hashable, Iterable, TypeVar
 
@@ -210,7 +211,7 @@ class SchemaDiff:
             ),
         }
 
-    @property
+    @cached_property
     def change_count(self) -> int:
         """Total number of individual changes.
 
@@ -239,12 +240,12 @@ def diff_schemas(old: OrgSchema, new: OrgSchema) -> SchemaDiff:
     Deterministic: every collection in the result is sorted case-insensitively
     by its identity, independent of the input order.
     """
-    mappings_added, mappings_removed = _added_removed(
+    mappings_added, mappings_removed, _ = _match(
         old.mappings,
         new.mappings,
         key=lambda m: (m.source_dlo, m.target_dmo),
     )
-    fm_added, fm_removed = _added_removed(
+    fm_added, fm_removed, _ = _match(
         old.dmo_field_mappings,
         new.dmo_field_mappings,
         key=_field_mapping_key,
@@ -298,29 +299,29 @@ def _counts(added: tuple, removed: tuple, changed: tuple = ()) -> dict[str, int]
 
 
 def _sort_key(key: Any) -> tuple[str, ...]:
-    """Case-insensitive sort key for a str or tuple-of-optional-str identity."""
+    """Case-insensitive sort key for a str or tuple-of-optional-str identity.
+
+    Ends with ``repr(key)`` so identities that differ only in case (or in
+    ``None`` vs ``""``) still sort in a fixed order.
+    """
     parts = key if isinstance(key, tuple) else (key,)
-    return tuple((p or "").lower() for p in parts)
+    return tuple((p or "").lower() for p in parts) + (repr(key),)
 
 
-def _by_name(item: Any) -> str:
-    return item.name.lower()
-
-
-def _index(items: Iterable[T], key: Callable[[T], Hashable]) -> dict[Hashable, T]:
-    return {key(item): item for item in items}
-
-
-def _added_removed(
+def _match(
     old: Iterable[T], new: Iterable[T], key: Callable[[T], Hashable]
-) -> tuple[tuple[T, ...], tuple[T, ...]]:
-    """Items only in ``new`` (added) and only in ``old`` (removed), sorted."""
-    old_by_key, new_by_key = _index(old, key), _index(new, key)
-    added = [new_by_key[k] for k in new_by_key.keys() - old_by_key.keys()]
-    removed = [old_by_key[k] for k in old_by_key.keys() - new_by_key.keys()]
+) -> tuple[tuple[T, ...], tuple[T, ...], tuple[tuple[T, T], ...]]:
+    """Match items by key: added, removed and ``(old, new)`` pairs, all sorted."""
+    old_by_key = {key(item): item for item in old}
+    new_by_key = {key(item): item for item in new}
+    old_keys, new_keys = old_by_key.keys(), new_by_key.keys()
     return (
-        tuple(sorted(added, key=lambda i: _sort_key(key(i)))),
-        tuple(sorted(removed, key=lambda i: _sort_key(key(i)))),
+        tuple(new_by_key[k] for k in sorted(new_keys - old_keys, key=_sort_key)),
+        tuple(old_by_key[k] for k in sorted(old_keys - new_keys, key=_sort_key)),
+        tuple(
+            (old_by_key[k], new_by_key[k])
+            for k in sorted(old_keys & new_keys, key=_sort_key)
+        ),
     )
 
 
@@ -342,24 +343,16 @@ def _diff_objects(
     new: tuple[DataModelObject | DataLakeObject, ...],
 ) -> ObjectDiff:
     """Diff DMOs or DLOs by API name, descending into their fields."""
-    added, removed = _added_removed(old, new, key=lambda o: o.name)
-    old_by_name = _index(old, lambda o: o.name)
+    added, removed, pairs = _match(old, new, key=lambda o: o.name)
     changed: list[ObjectChange] = []
-    for new_obj in sorted(_index(new, lambda o: o.name).values(), key=_by_name):
-        old_obj = old_by_name.get(new_obj.name)
-        if old_obj is None:
-            continue
-        fields_added, fields_removed = _added_removed(
+    for old_obj, new_obj in pairs:
+        fields_added, fields_removed, field_pairs = _match(
             old_obj.fields, new_obj.fields, key=lambda f: f.name
         )
-        old_fields = _index(old_obj.fields, lambda f: f.name)
         fields_changed = tuple(
             FieldChange(name=f.name, changes=changes)
-            for f in sorted(
-                _index(new_obj.fields, lambda f: f.name).values(), key=_by_name
-            )
-            if f.name in old_fields
-            and (changes := _value_changes(old_fields[f.name], f, FIELD_ATTRIBUTES))
+            for o, f in field_pairs
+            if (changes := _value_changes(o, f, FIELD_ATTRIBUTES))
         )
         label_changes = _value_changes(old_obj, new_obj, ("label",))
         if label_changes or fields_added or fields_removed or fields_changed:
@@ -400,12 +393,8 @@ def _diff_keyed(
     attributes: tuple[str, ...],
 ) -> tuple[tuple[T, ...], tuple[T, ...], tuple[tuple[T, tuple], ...]]:
     """Added, removed and ``(new item, changes)`` for items matched by key."""
-    added, removed = _added_removed(old, new, key=key)
-    old_by_key = _index(old, key)
+    added, removed, pairs = _match(old, new, key)
     changed = tuple(
-        (item, changes)
-        for item in sorted(_index(new, key).values(), key=lambda i: _sort_key(key(i)))
-        if key(item) in old_by_key
-        and (changes := _value_changes(old_by_key[key(item)], item, attributes))
+        (n, changes) for o, n in pairs if (changes := _value_changes(o, n, attributes))
     )
     return added, removed, changed
