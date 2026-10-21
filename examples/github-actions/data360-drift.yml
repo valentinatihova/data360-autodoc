@@ -65,7 +65,7 @@ jobs:
             --output current
 
       - name: Diff against baseline
-        # Exit code 1 = drift detected (fails the job), 2 = unreadable snapshot.
+        # Exit code 1 = drift detected (fails the job), 2 = any error.
         run: |
           data360-autodoc diff "$BASELINE" "current/$(basename "$BASELINE")" \
             --output drift/drift.md \

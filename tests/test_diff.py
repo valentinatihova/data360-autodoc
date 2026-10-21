@@ -13,8 +13,10 @@ from data360_autodoc.generator.snapshot import load_json
 from data360_autodoc.models import (
     DataLakeObject,
     DataModelObject,
+    DataStream,
     DmoFieldMapping,
     FieldDef,
+    FieldMapping,
     Mapping,
     OrgSchema,
     Relationship,
@@ -174,6 +176,74 @@ def test_dmos_and_dlos_are_diffed_independently() -> None:
     assert [o.name for o in diff.dlos.removed] == ["X__dll"]
 
 
+def test_missing_and_empty_values_are_not_drift() -> None:
+    old = _schema(relationships=(_rel(relationship_label=None, status=""),))
+    new = _schema(relationships=(_rel(relationship_label="", status=None),))
+    assert not diff_schemas(old, new).has_changes
+
+
+# --------------------------------------------------------------------------- #
+# Data streams + Stream → DLO field mappings
+# --------------------------------------------------------------------------- #
+
+
+def _stream(**overrides) -> DataStream:
+    base = DataStream(
+        name="Contact_Home",
+        dlo_name="Contact_Home__dll",
+        dlo_label="Contact (Home)",
+        primary_keys=("ContactId",),
+        refresh_mode="FULL_REFRESH",
+    )
+    return replace(base, **overrides)
+
+
+def _sfm(**overrides) -> FieldMapping:
+    base = FieldMapping(
+        stream_name="Contact_Home",
+        source_field="Email",
+        dlo_field_label="Email",
+        dlo_field_name="Email__c",
+        data_type="Text",
+    )
+    return replace(base, **overrides)
+
+
+def test_stream_added_removed_and_changed() -> None:
+    old = _schema(streams=(_stream(), _stream(name="Legacy")))
+    new = _schema(
+        streams=(
+            _stream(primary_keys=("ContactId", "Email"), dlo_label="Contacts"),
+            _stream(name="Orders"),
+        )
+    )
+    diff = diff_schemas(old, new)
+    assert [s.name for s in diff.streams_added] == ["Orders"]
+    assert [s.name for s in diff.streams_removed] == ["Legacy"]
+    (change,) = diff.streams_changed
+    # dlo_label is display only; the key change is drift.
+    assert change.changes == (
+        ValueChange("primary_keys", ("ContactId",), ("ContactId", "Email")),
+    )
+    assert diff.change_count == 3
+
+
+def test_stream_field_mapping_changes() -> None:
+    old = _schema(field_mappings=(_sfm(), _sfm(dlo_field_name="Phone__c")))
+    new = _schema(
+        field_mappings=(
+            _sfm(data_type="Email", dlo_field_label="E-mail"),
+            _sfm(dlo_field_name="Birthdate__c", data_type="Date"),
+        )
+    )
+    diff = diff_schemas(old, new)
+    assert [m.dlo_field_name for m in diff.stream_fields_added] == ["Birthdate__c"]
+    assert [m.dlo_field_name for m in diff.stream_fields_removed] == ["Phone__c"]
+    (change,) = diff.stream_fields_changed
+    assert change.changes == (ValueChange("data_type", "Text", "Email"),)
+    assert diff.summary()["stream_fields"] == {"added": 1, "removed": 1, "changed": 1}
+
+
 # --------------------------------------------------------------------------- #
 # Mappings + relationships
 # --------------------------------------------------------------------------- #
@@ -253,6 +323,8 @@ def test_fixture_pair_summary() -> None:
         "dmo_fields": {"added": 2, "removed": 0, "changed": 1},
         "dlos": {"added": 1, "removed": 1, "changed": 2},
         "dlo_fields": {"added": 2, "removed": 0, "changed": 1},
+        "streams": {"added": 0, "removed": 0, "changed": 0},
+        "stream_fields": {"added": 0, "removed": 0, "changed": 0},
         "mappings": {"added": 1, "removed": 1, "changed": 0},
         "field_mappings": {"added": 4, "removed": 1, "changed": 0},
         "relationships": {"added": 1, "removed": 0, "changed": 1},

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,7 +19,13 @@ from data360_autodoc.generator.drift import (
     render_diff_markdown,
 )
 from data360_autodoc.generator.snapshot import load_json
-from data360_autodoc.models import DataModelObject, FieldDef, OrgSchema
+from data360_autodoc.models import (
+    DataModelObject,
+    DataStream,
+    FieldDef,
+    FieldMapping,
+    OrgSchema,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 BEFORE = str(FIXTURES / "acme-before.json")
@@ -104,6 +111,35 @@ def test_markdown_escapes_org_text_and_shows_key_changes() -> None:
     assert "Drift — A\\|B" in md
     assert "- label: X → X\\|Y" in md
     assert "| changed | Id__c | is_key: no → yes; key_qualifier: ∅ → PK |" in md
+
+
+def test_streams_in_markdown_and_json() -> None:
+    ts = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    stream = DataStream("Orders", "Order_Home__dll", "Order (Home)")
+    field = FieldMapping("Orders", "Amt", "Amount", "Amount__c", "Text")
+    old = OrgSchema("A", "https://x", ts, streams=(stream,), field_mappings=(field,))
+    new = OrgSchema(
+        "A",
+        "https://x",
+        ts,
+        streams=(replace(stream, primary_keys=("OrderId", "Line")),),
+        field_mappings=(replace(field, data_type="Number"),),
+    )
+    diff = diff_schemas(old, new)
+    md = render_diff_markdown(diff)
+    assert "| Data streams | 0 | 0 | 1 |" in md
+    assert "| changed | Orders | primary_keys: ∅ → OrderId, Line |" in md
+    assert "| changed | Orders | Amount__c | data_type: Text → Number |" in md
+    data = json.loads(render_diff_json(diff))
+    assert data["streams"]["changed"] == [
+        {
+            "name": "Orders",
+            "changes": [
+                {"attribute": "primary_keys", "old": [], "new": ["OrderId", "Line"]}
+            ],
+        }
+    ]
+    assert data["stream_fields"]["changed"][0]["dlo_field_name"] == "Amount__c"
 
 
 def test_markdown_is_deterministic() -> None:
@@ -226,6 +262,28 @@ def test_cli_future_snapshot_version_is_clean_error(tmp_path: Path) -> None:
     result = _runner().invoke(cli, ["diff", BEFORE, str(future)])
     assert result.exit_code == EXIT_ERROR
     assert "Unsupported snapshot_version 999" in result.stderr
+
+
+def test_cli_malformed_snapshot_is_error_not_drift(tmp_path: Path) -> None:
+    # Valid JSON with a null name must not crash with exit 1 (= drift).
+    data = json.loads(Path(AFTER).read_text(encoding="utf-8"))
+    data["dmos"][0]["name"] = None
+    bad = tmp_path / "null-name.json"
+    bad.write_text(json.dumps(data), encoding="utf-8")
+    result = _runner().invoke(cli, ["diff", BEFORE, str(bad), "--fail-on-change"])
+    assert result.exit_code == EXIT_ERROR
+    assert "Malformed snapshot data" in result.stderr
+
+
+def test_cli_unwritable_output_is_error_not_drift(tmp_path: Path) -> None:
+    blocker = tmp_path / "file"
+    blocker.write_text("", encoding="utf-8")
+    out = blocker / "drift.md"  # parent is a file
+    result = _runner().invoke(
+        cli, ["diff", BEFORE, AFTER, "--output", str(out), "--fail-on-change"]
+    )
+    assert result.exit_code == EXIT_ERROR
+    assert "Could not write report" in result.stderr
 
 
 def test_cli_missing_file_is_usage_error(tmp_path: Path) -> None:

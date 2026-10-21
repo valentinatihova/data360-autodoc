@@ -17,6 +17,7 @@ Report shape (Markdown)::
 
     ## Data Model Objects (DMOs)       (only areas with changes are rendered)
     ## Data Lake Objects (DLOs)
+    ## Data Streams
     ## DLO → DMO Mappings
     ## Relationships
 """
@@ -24,6 +25,7 @@ Report shape (Markdown)::
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -34,7 +36,13 @@ from data360_autodoc.diff import (
     ValueChange,
 )
 from data360_autodoc.generator.markdown import _escape
-from data360_autodoc.models import DmoFieldMapping, FieldDef, Mapping, Relationship
+from data360_autodoc.models import (
+    DmoFieldMapping,
+    FieldDef,
+    FieldMapping,
+    Mapping,
+    Relationship,
+)
 
 #: Bump when the JSON report shape changes incompatibly.
 DIFF_REPORT_VERSION = 1
@@ -45,6 +53,8 @@ _SUMMARY_ROWS = (
     ("dmo_fields", "DMO fields"),
     ("dlos", "DLOs"),
     ("dlo_fields", "DLO fields"),
+    ("streams", "Data streams"),
+    ("stream_fields", "Stream → DLO field mappings"),
     ("mappings", "DLO → DMO object mappings"),
     ("field_mappings", "DLO → DMO field mappings"),
     ("relationships", "Relationships"),
@@ -81,6 +91,7 @@ def render_diff_markdown(diff: SchemaDiff) -> str:
 
     lines.extend(_render_objects("Data Model Objects (DMOs)", diff.dmos))
     lines.extend(_render_objects("Data Lake Objects (DLOs)", diff.dlos))
+    lines.extend(_render_streams(diff))
     lines.extend(_render_mappings(diff))
     lines.extend(_render_relationships(diff))
     return "\n".join(lines).rstrip("\n") + "\n"
@@ -102,6 +113,29 @@ def diff_to_dict(diff: SchemaDiff) -> dict[str, Any]:
         "summary": diff.summary(),
         "dmos": _objects_to_dict(diff.dmos),
         "dlos": _objects_to_dict(diff.dlos),
+        "streams": {
+            "added": [asdict(s) for s in diff.streams_added],
+            "removed": [asdict(s) for s in diff.streams_removed],
+            "changed": [
+                {
+                    "name": c.stream.name,
+                    "changes": [_change_to_dict(v) for v in c.changes],
+                }
+                for c in diff.streams_changed
+            ],
+        },
+        "stream_fields": {
+            "added": [asdict(m) for m in diff.stream_fields_added],
+            "removed": [asdict(m) for m in diff.stream_fields_removed],
+            "changed": [
+                {
+                    "stream_name": c.mapping.stream_name,
+                    "dlo_field_name": c.mapping.dlo_field_name,
+                    "changes": [_change_to_dict(v) for v in c.changes],
+                }
+                for c in diff.stream_fields_changed
+            ],
+        },
         "mappings": {
             "added": [_mapping_to_dict(m) for m in diff.mappings_added],
             "removed": [_mapping_to_dict(m) for m in diff.mappings_removed],
@@ -181,6 +215,53 @@ def _render_objects(title: str, objects: ObjectDiff) -> list[str]:
                 for kind, name, details in rows:
                     lines.append(f"| {kind} | {_escape(name)} | {details} |")
                 lines.append("")
+    return lines
+
+
+def _render_streams(diff: SchemaDiff) -> list[str]:
+    """Render data stream and Stream → DLO field mapping changes."""
+    stream_rows = (
+        [("added", s.name, f"→ {_escape(s.dlo_name)}") for s in diff.streams_added]
+        + [
+            ("removed", s.name, f"→ {_escape(s.dlo_name)}")
+            for s in diff.streams_removed
+        ]
+        + [
+            ("changed", c.stream.name, "; ".join(map(_describe_change, c.changes)))
+            for c in diff.streams_changed
+        ]
+    )
+    field_rows = (
+        [("added", m, _describe_stream_field(m)) for m in diff.stream_fields_added]
+        + [
+            ("removed", m, _describe_stream_field(m))
+            for m in diff.stream_fields_removed
+        ]
+        + [
+            ("changed", c.mapping, "; ".join(map(_describe_change, c.changes)))
+            for c in diff.stream_fields_changed
+        ]
+    )
+    if not (stream_rows or field_rows):
+        return []
+    lines = ["## Data Streams", ""]
+    if stream_rows:
+        lines.append("| Change | Stream | Details |")
+        lines.append("| --- | --- | --- |")
+        for kind, name, details in stream_rows:
+            lines.append(f"| {kind} | {_escape(name)} | {details} |")
+        lines.append("")
+    if field_rows:
+        lines.append("### Stream → DLO field mappings")
+        lines.append("")
+        lines.append("| Change | Stream | DLO Field | Details |")
+        lines.append("| --- | --- | --- | --- |")
+        for kind, m, details in field_rows:
+            lines.append(
+                f"| {kind} | {_escape(m.stream_name)} "
+                f"| {_escape(m.dlo_field_name)} | {details} |"
+            )
+        lines.append("")
     return lines
 
 
@@ -272,6 +353,16 @@ def _describe_field(f: FieldDef) -> str:
     return text
 
 
+def _describe_stream_field(m: FieldMapping) -> str:
+    """``Text``, ``Text, primary key`` — plus the source field when known."""
+    text = _escape(m.data_type)
+    if m.is_primary_key:
+        text += ", primary key"
+    if m.source_field:
+        text += f", from {_escape(m.source_field)}"
+    return text
+
+
 def _describe_relationship(r: Relationship) -> str:
     parts = []
     if r.cardinality:
@@ -290,10 +381,12 @@ def _describe_change(change: ValueChange) -> str:
 
 
 def _format_value(value: Any) -> str:
-    if value is None or value == "":
+    if value is None or value == "" or value == ():
         return "∅"
     if isinstance(value, bool):
         return "yes" if value else "no"
+    if isinstance(value, tuple):
+        return ", ".join(_escape(str(v)) for v in value)
     return _escape(str(value))
 
 

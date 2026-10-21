@@ -10,6 +10,10 @@ What is compared, and how each item is identified:
 - **DMOs / DLOs** — by API name. Added / removed objects, label changes, and
   per-field drift (added / removed fields; ``type``, ``is_key`` and
   ``key_qualifier`` changes).
+- **Data streams** — by stream name; source, category, target DLO, keys,
+  formula fields, schedule and refresh/extraction mode changes.
+- **Stream → DLO field mappings** — by ``(stream, DLO field)``; source field,
+  data type, primary/foreign key flags and nullability changes.
 - **DLO → DMO object mappings** — by ``(source_dlo, target_dmo)``.
 - **DLO → DMO field mappings** — by ``(source DLO, source field, target DMO,
   target field)``. A field re-pointed to another attribute shows up as one
@@ -19,9 +23,9 @@ What is compared, and how each item is identified:
   changes are reported as changed.
 
 Deliberately ignored: ``generated_at`` (always differs), display labels on
-mapping rows (cosmetic), and ``FieldDef.type_inferred`` (type *provenance*,
-not a schema change — a resolved type that changes still shows up as a
-``type`` change).
+mapping and stream rows (cosmetic), and ``FieldDef.type_inferred`` (type
+*provenance*, not a schema change — a resolved type that changes still shows up
+as a ``type`` change). A missing value and an empty string compare equal.
 """
 
 from __future__ import annotations
@@ -33,8 +37,10 @@ from typing import Any, Callable, Hashable, Iterable, TypeVar
 from data360_autodoc.models import (
     DataLakeObject,
     DataModelObject,
+    DataStream,
     DmoFieldMapping,
     FieldDef,
+    FieldMapping,
     Mapping,
     OrgSchema,
     Relationship,
@@ -45,6 +51,30 @@ FIELD_ATTRIBUTES = ("type", "is_key", "key_qualifier")
 
 #: Relationship attributes compared for drift (the rest form its identity).
 RELATIONSHIP_ATTRIBUTES = ("cardinality", "status", "relationship_label")
+
+#: Data stream attributes compared for drift (``dlo_label`` is display only).
+STREAM_ATTRIBUTES = (
+    "dlo_name",
+    "data_source",
+    "category",
+    "event_time_field",
+    "primary_keys",
+    "formula_fields",
+    "formula_calculations",
+    "org_unit_identifier",
+    "schedule_frequency",
+    "refresh_mode",
+    "de_extraction_mode",
+)
+
+#: Stream → DLO field mapping attributes compared for drift.
+STREAM_FIELD_ATTRIBUTES = (
+    "source_field",
+    "data_type",
+    "is_primary_key",
+    "is_foreign_key",
+    "nullable",
+)
 
 T = TypeVar("T")
 
@@ -104,6 +134,22 @@ class RelationshipChange:
 
 
 @dataclass(frozen=True)
+class StreamChange:
+    """A data stream present in both snapshots whose attributes changed."""
+
+    stream: DataStream
+    changes: tuple[ValueChange, ...]
+
+
+@dataclass(frozen=True)
+class StreamFieldChange:
+    """A Stream → DLO field mapping present in both snapshots that changed."""
+
+    mapping: FieldMapping
+    changes: tuple[ValueChange, ...]
+
+
+@dataclass(frozen=True)
 class SnapshotInfo:
     """Header of one compared snapshot (which org, when)."""
 
@@ -120,6 +166,12 @@ class SchemaDiff:
     new: SnapshotInfo
     dmos: ObjectDiff = field(default_factory=ObjectDiff)
     dlos: ObjectDiff = field(default_factory=ObjectDiff)
+    streams_added: tuple[DataStream, ...] = ()
+    streams_removed: tuple[DataStream, ...] = ()
+    streams_changed: tuple[StreamChange, ...] = ()
+    stream_fields_added: tuple[FieldMapping, ...] = ()
+    stream_fields_removed: tuple[FieldMapping, ...] = ()
+    stream_fields_changed: tuple[StreamFieldChange, ...] = ()
     mappings_added: tuple[Mapping, ...] = ()
     mappings_removed: tuple[Mapping, ...] = ()
     field_mappings_added: tuple[DmoFieldMapping, ...] = ()
@@ -139,6 +191,14 @@ class SchemaDiff:
             "dmo_fields": self.dmos.field_counts(),
             "dlos": _counts(self.dlos.added, self.dlos.removed, self.dlos.changed),
             "dlo_fields": self.dlos.field_counts(),
+            "streams": _counts(
+                self.streams_added, self.streams_removed, self.streams_changed
+            ),
+            "stream_fields": _counts(
+                self.stream_fields_added,
+                self.stream_fields_removed,
+                self.stream_fields_changed,
+            ),
             "mappings": _counts(self.mappings_added, self.mappings_removed),
             "field_mappings": _counts(
                 self.field_mappings_added, self.field_mappings_removed
@@ -189,16 +249,39 @@ def diff_schemas(old: OrgSchema, new: OrgSchema) -> SchemaDiff:
         new.dmo_field_mappings,
         key=_field_mapping_key,
     )
+    streams_added, streams_removed, streams_changed = _diff_keyed(
+        old.streams, new.streams, key=lambda s: s.name, attributes=STREAM_ATTRIBUTES
+    )
+    sf_added, sf_removed, sf_changed = _diff_keyed(
+        old.field_mappings,
+        new.field_mappings,
+        key=_stream_field_key,
+        attributes=STREAM_FIELD_ATTRIBUTES,
+    )
+    rel_added, rel_removed, rel_changed = _diff_keyed(
+        old.relationships,
+        new.relationships,
+        key=_relationship_key,
+        attributes=RELATIONSHIP_ATTRIBUTES,
+    )
     return SchemaDiff(
         old=_info(old),
         new=_info(new),
         dmos=_diff_objects(old.dmos, new.dmos),
         dlos=_diff_objects(old.dlos, new.dlos),
+        streams_added=streams_added,
+        streams_removed=streams_removed,
+        streams_changed=tuple(StreamChange(s, c) for s, c in streams_changed),
+        stream_fields_added=sf_added,
+        stream_fields_removed=sf_removed,
+        stream_fields_changed=tuple(StreamFieldChange(m, c) for m, c in sf_changed),
         mappings_added=mappings_added,
         mappings_removed=mappings_removed,
         field_mappings_added=fm_added,
         field_mappings_removed=fm_removed,
-        **_diff_relationships(old.relationships, new.relationships),
+        relationships_added=rel_added,
+        relationships_removed=rel_removed,
+        relationships_changed=tuple(RelationshipChange(r, c) for r, c in rel_changed),
     )
 
 
@@ -245,8 +328,13 @@ def _value_changes(old: Any, new: Any, attributes: tuple[str, ...]) -> tuple:
     return tuple(
         ValueChange(attribute=a, old=getattr(old, a), new=getattr(new, a))
         for a in attributes
-        if getattr(old, a) != getattr(new, a)
+        if _normalize(getattr(old, a)) != _normalize(getattr(new, a))
     )
+
+
+def _normalize(value: Any) -> Any:
+    # The API reports a missing value as null or "" inconsistently: not drift.
+    return None if value == "" else value
 
 
 def _diff_objects(
@@ -301,26 +389,23 @@ def _relationship_key(r: Relationship) -> tuple[str | None, ...]:
     return (r.source_dmo_name, r.source_field, r.related_entity, r.related_field)
 
 
-def _diff_relationships(
-    old: tuple[Relationship, ...], new: tuple[Relationship, ...]
-) -> dict[str, tuple]:
-    added, removed = _added_removed(old, new, key=_relationship_key)
-    old_by_key = _index(old, _relationship_key)
-    new_by_key = _index(new, _relationship_key)
+def _stream_field_key(m: FieldMapping) -> tuple[str, str]:
+    return (m.stream_name, m.dlo_field_name)
+
+
+def _diff_keyed(
+    old: Iterable[T],
+    new: Iterable[T],
+    key: Callable[[T], Hashable],
+    attributes: tuple[str, ...],
+) -> tuple[tuple[T, ...], tuple[T, ...], tuple[tuple[T, tuple], ...]]:
+    """Added, removed and ``(new item, changes)`` for items matched by key."""
+    added, removed = _added_removed(old, new, key=key)
+    old_by_key = _index(old, key)
     changed = tuple(
-        RelationshipChange(relationship=r, changes=changes)
-        for r in sorted(
-            new_by_key.values(), key=lambda r: _sort_key(_relationship_key(r))
-        )
-        if _relationship_key(r) in old_by_key
-        and (
-            changes := _value_changes(
-                old_by_key[_relationship_key(r)], r, RELATIONSHIP_ATTRIBUTES
-            )
-        )
+        (item, changes)
+        for item in sorted(_index(new, key).values(), key=lambda i: _sort_key(key(i)))
+        if key(item) in old_by_key
+        and (changes := _value_changes(old_by_key[key(item)], item, attributes))
     )
-    return {
-        "relationships_added": added,
-        "relationships_removed": removed,
-        "relationships_changed": changed,
-    }
+    return added, removed, changed

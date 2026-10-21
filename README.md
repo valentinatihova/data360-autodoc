@@ -178,17 +178,19 @@ _New: 2026-10-08 06:00:00 UTC · https://acme.my.salesforce.com_
 | --- | --- | --- |
 | DMOs, DLOs | API name | added / removed; label changes |
 | Fields | object + field name | added / removed; `type`, `is_key`, `key_qualifier` changes |
+| Data streams | stream name | added / removed; target DLO, source, category, primary keys, formula fields, schedule, refresh / extraction mode changes |
+| Stream → DLO field mappings | stream + DLO field | added / removed; source field, data type, primary / foreign key and nullability changes |
 | DLO → DMO object mappings | source DLO + target DMO | added / removed |
 | DLO → DMO field mappings | source DLO + field → target DMO + field | added / removed (a re-pointed field shows as one of each) |
 | DMO relationships | object + field → related object + field | added / removed; `cardinality`, `status`, label changes |
 
-The snapshot timestamp, display labels on mapping rows, and the `(via DLO)` type-provenance flag are ignored — they are not schema changes.
+The snapshot timestamp, display labels on mapping and stream rows, and the `(via DLO)` type-provenance flag are ignored — they are not schema changes. A missing value and an empty string count as the same value.
 
 **Options:**
 
 - `--format markdown|json` — human-readable report (default) or a machine-readable JSON report (`has_changes`, `change_count`, per-area `summary`, and full added/removed/changed detail) for scripts.
 - `--output FILE` — write the report to a file instead of stdout. A one-line summary (`Schema drift: 18 changes` / `No schema drift.`) always goes to stderr, so piped stdout stays a clean report.
-- `--fail-on-change` — exit with status `1` when anything drifted. Without it, `diff` exits `0` whether or not drift was found. An unreadable or incompatible snapshot exits `2`.
+- `--fail-on-change` — exit with status `1` when anything drifted. Without it, `diff` exits `0` whether or not drift was found. Any error (an unreadable, malformed or incompatible snapshot, or a report that can't be written) exits `2`, so it is never mistaken for drift.
 
 ### Drift checks in CI
 

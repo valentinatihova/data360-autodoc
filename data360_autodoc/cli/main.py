@@ -18,8 +18,8 @@ The ``.json`` snapshot is a first-class output, not a debug artifact: the
         [--output FILE] [--fail-on-change]
 
 ``diff`` exit codes: ``0`` no drift (or drift without ``--fail-on-change``),
-``1`` drift detected with ``--fail-on-change``, ``2`` unreadable snapshot or
-usage error.
+``1`` drift detected with ``--fail-on-change``, ``2`` any error (unreadable or
+malformed snapshot, unwritable report, usage error).
 """
 
 from __future__ import annotations
@@ -254,16 +254,25 @@ def diff(
 
     OLD_SNAPSHOT and NEW_SNAPSHOT are .json files written by
     `generate --format json`. Reports added, removed and changed DMOs, DLOs,
-    fields, DLO -> DMO mappings and DMO relationships.
+    fields, data streams, Stream -> DLO and DLO -> DMO mappings and DMO
+    relationships.
     """
-    result = diff_schemas(_load_snapshot(old_snapshot), _load_snapshot(new_snapshot))
+    old, new = _load_snapshot(old_snapshot), _load_snapshot(new_snapshot)
     render = render_diff_json if output_format == "json" else render_diff_markdown
-    report = render(result)
+    try:
+        result = diff_schemas(old, new)
+        report = render(result)
+    except (AttributeError, TypeError) as exc:
+        # Valid JSON with wrongly typed values (e.g. a null name).
+        raise _diff_error(f"Malformed snapshot data: {exc}") from exc
 
     if output_path:
         out = Path(output_path)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(report, encoding="utf-8")
+        try:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(report, encoding="utf-8")
+        except OSError as exc:
+            raise _diff_error(f"Could not write report {output_path}: {exc}")
         click.echo(f"Wrote {out.name}")
     else:
         click.echo(report, nl=False)
@@ -285,11 +294,16 @@ def _load_snapshot(path: str) -> OrgSchema:
         return load_json(Path(path).read_text(encoding="utf-8"))
     except KeyError as exc:
         message = f"missing required key {exc}"
-    except (ValueError, TypeError, AttributeError) as exc:
+    except (OSError, ValueError, TypeError, AttributeError) as exc:
         message = str(exc)
-    error = click.ClickException(f"Could not read snapshot {path}: {message}")
+    raise _diff_error(f"Could not read snapshot {path}: {message}")
+
+
+def _diff_error(message: str) -> click.ClickException:
+    """A ``diff`` failure that exits ``EXIT_ERROR`` — never mistaken for drift."""
+    error = click.ClickException(message)
     error.exit_code = EXIT_ERROR
-    raise error
+    return error
 
 
 def _slug(value: str) -> str:
