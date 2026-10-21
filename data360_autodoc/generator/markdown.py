@@ -22,7 +22,7 @@ Document shape::
 
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from itertools import groupby
 
 from data360_autodoc.models import (
@@ -101,9 +101,7 @@ def render_markdown(schema: OrgSchema) -> str:
     lines: list[str] = []
     lines.append(f"# Data 360 Documentation — {_escape(schema.org_name)}")
     lines.append("")
-    timestamp = schema.generated_at.astimezone(timezone.utc).strftime(
-        "%Y-%m-%d %H:%M:%S UTC"
-    )
+    timestamp = _timestamp(schema.generated_at)
     lines.append(f"_Generated {timestamp} · {_escape(schema.instance_url)}_")
     lines.append("")
 
@@ -394,6 +392,11 @@ def _render_ci_section(cios: tuple[CalculatedInsight, ...]) -> list[str]:
         lines.append(f"- **Measures:** {measures}")
         lines.append("")
     return lines
+
+
+def _timestamp(value: datetime) -> str:
+    """``2026-10-01 06:00:00 UTC`` — the timestamp shown in report headers."""
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _escape(value: str) -> str:

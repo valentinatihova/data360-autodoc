@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [0.3.0] - 2026-10-16
+## [0.3.0] - Unreleased
 
 ### Added
 - **Schema drift detection**: `data360-autodoc diff OLD.json NEW.json` compares

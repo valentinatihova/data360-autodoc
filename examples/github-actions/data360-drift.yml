@@ -44,6 +44,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install data360-autodoc
+        # Needs 0.3.0+. Until it is on PyPI, install from GitHub instead:
+        #   pip install git+https://github.com/valentinatihova/data360-autodoc
         run: pip install "data360-autodoc>=0.3.0"
 
       - name: Fetch current snapshot

@@ -96,6 +96,14 @@ def test_input_order_does_not_matter() -> None:
     assert not diff_schemas(old, new).has_changes
 
 
+def test_order_is_fixed_when_identities_differ_only_in_case() -> None:
+    a, b = DataLakeObject("Acme__dll", "A"), DataLakeObject("ACME__dll", "B")
+    r1, r2 = _rel(source_field=None), _rel(source_field="")
+    first = diff_schemas(_schema(), _schema(dlos=(a, b), relationships=(r1, r2)))
+    second = diff_schemas(_schema(), _schema(dlos=(b, a), relationships=(r2, r1)))
+    assert first == second
+
+
 def test_type_inferred_flag_alone_is_not_drift() -> None:
     old = _schema(dmos=(_individual(FieldDef("Rev__c", "Number")),))
     new = _schema(dmos=(_individual(FieldDef("Rev__c", "Number", type_inferred=True)),))

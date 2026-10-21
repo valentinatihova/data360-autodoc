@@ -123,6 +123,8 @@ Under the hood it calls the **Data 360 Connect REST API** (`/services/data/v…/
 
 An org documented today is stale next week: a client admin adds a DLO, retypes a field, re-points a mapping, deactivates a relationship. Save a JSON snapshot, take another one later (or from another org — sandbox vs production), and `diff` tells you exactly what changed:
 
+> `diff` ships in 0.3.0, which is not on PyPI yet. Until it is, install from GitHub: `pip install git+https://github.com/valentinatihova/data360-autodoc`.
+
 ```bash
 data360-autodoc diff snapshots/acme-before.json snapshots/acme-after.json
 ```
