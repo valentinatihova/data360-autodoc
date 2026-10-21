@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-10-21
 
 ### Added
 - **Schema drift detection**: `data360-autodoc diff OLD.json NEW.json` compares
@@ -26,6 +26,8 @@ semantic versioning.
 - Synthetic before/after snapshot fixtures (`tests/fixtures/acme-*.json`).
 
 ### Changed
+- Releases are published to PyPI from GitHub Actions (Trusted Publishing) when
+  a GitHub Release is created.
 - Tests and `black --check` now run in GitHub Actions on Python 3.11–3.14 for
   every pull request and push to `main`; the README badge shows the live status.
 
