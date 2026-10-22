@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from data360_autodoc.fetcher._http import FetchError, iter_pages
+from data360_autodoc.fetcher._http import FetchError, UnauthorizedError, iter_pages
 from data360_autodoc.models import DataLakeObject, DataStream, FieldDef, FieldMapping
 
 #: Connector-name lookup order, shared by stream + field-mapping rows.
@@ -63,8 +63,12 @@ def _iter_raw_streams(
             for stream in page.get("dataStreams", []):
                 if isinstance(stream, dict):
                     raw.append(stream)
+    except UnauthorizedError:
+        raise  # fetch_metadata turns it into MetadataUnauthorized
     except FetchError as exc:
-        raise StreamsError(str(exc)) from exc
+        error = StreamsError(str(exc))
+        error.detail = exc.detail
+        raise error from exc
     return raw
 
 

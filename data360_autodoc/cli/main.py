@@ -2,7 +2,14 @@
 
 Orchestrates the one-shot pipeline::
 
-    auth (JWT bearer) -> fetch metadata -> render outputs -> write files
+    auth (sf CLI session | access token | JWT bearer) -> fetch metadata
+        -> render outputs -> write files
+
+Exactly one auth mode per run: ``--target-org`` (reuse an ``sf`` login),
+``--access-token``, or JWT (``--client-id`` + ``--private-key`` +
+``--username``). With no auth flag on the command line, the same values are read
+from ``DATA360_TARGET_ORG`` / ``DATA360_ACCESS_TOKEN`` / ``DATA360_CLIENT_ID`` +
+``DATA360_PRIVATE_KEY`` + ``DATA360_USERNAME`` (keeps secrets out of ``ps``).
 
 Outputs are selected with ``--format``:
 
@@ -24,6 +31,7 @@ malformed snapshot, unwritable report, usage error).
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -38,7 +46,12 @@ from data360_autodoc.fetcher.auth import (
     AuthError,
     get_access_token,
 )
-from data360_autodoc.fetcher.metadata import MetadataError, fetch_metadata
+from data360_autodoc.fetcher.metadata import (
+    MetadataError,
+    MetadataUnauthorized,
+    fetch_metadata,
+)
+from data360_autodoc.fetcher.sf_cli import SfCliError, org_credentials
 from data360_autodoc.generator.drift import render_diff_json, render_diff_markdown
 from data360_autodoc.generator.markdown import render_markdown
 from data360_autodoc.generator.mermaid import render_mermaid
@@ -57,6 +70,25 @@ EXIT_DRIFT = 1
 #: ``diff`` exit status for an unreadable snapshot (kept distinct from drift).
 EXIT_ERROR = 2
 
+#: Environment fallbacks for the auth options (read only when no auth flag is set).
+AUTH_ENV = {
+    "target_org": "DATA360_TARGET_ORG",
+    "access_token": "DATA360_ACCESS_TOKEN",
+    "client_id": "DATA360_CLIENT_ID",
+    "private_key_path": "DATA360_PRIVATE_KEY",
+    "username": "DATA360_USERNAME",
+}
+
+#: What to do when the org rejects the token (401), per auth mode.
+UNAUTHORIZED_HINTS = {
+    "target-org": "The sf session for '{alias}' has expired. "
+    "Run `sf org login web --alias {alias}` and try again.",
+    "access-token": "The access token was rejected (expired or invalid). "
+    "Get a new token and try again.",
+    "jwt": "The org rejected the JWT session. Check the connected app, the "
+    "user's permissions to Data Cloud, and --sandbox.",
+}
+
 
 @click.group()
 def cli() -> None:
@@ -64,12 +96,24 @@ def cli() -> None:
 
 
 @cli.command()
-@click.option("--instance-url", required=True, help="Org base URL.")
+@click.option(
+    "--target-org",
+    default=None,
+    help="Alias or username of an org you logged into with the Salesforce CLI "
+    "(`sf org login web --alias ALIAS`). Easiest way in: no connected app needed.",
+)
+@click.option(
+    "--instance-url",
+    envvar="DATA360_INSTANCE_URL",
+    default=None,
+    help="Org base URL. Required with --access-token or JWT auth; "
+    "taken from sf with --target-org.",
+)
 @click.option(
     "--access-token",
     default=None,
-    help="Use a pre-obtained OAuth access token and skip JWT auth. When set, "
-    "--client-id / --private-key / --username are not needed.",
+    help="Use a pre-obtained OAuth access token (prefer DATA360_ACCESS_TOKEN: a "
+    "command-line token is visible to other processes).",
 )
 @click.option(
     "--client-id", default=None, help="Connected app consumer key (JWT auth)."
@@ -78,7 +122,7 @@ def cli() -> None:
     "--private-key",
     "private_key_path",
     default=None,
-    type=click.Path(exists=True, dir_okay=False),
+    type=click.Path(dir_okay=False),
     help="Path to the connected app's PEM private key (JWT auth).",
 )
 @click.option(
@@ -125,8 +169,20 @@ def cli() -> None:
     help="Document every DMO, including disabled standard ones "
     "(default: enabled and custom DMOs only).",
 )
+@click.option(
+    "--org-name",
+    default=None,
+    help="Document title and output file name (default: the org's host name).",
+)
+@click.option(
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Show full error details (URLs and API responses) instead of short messages.",
+)
 def generate(
-    instance_url: str,
+    target_org: str | None,
+    instance_url: str | None,
     access_token: str | None,
     client_id: str | None,
     private_key_path: str | None,
@@ -137,41 +193,19 @@ def generate(
     api_version: str | None,
     timeout: float,
     all_dmos: bool,
+    org_name: str | None,
+    verbose: bool,
 ) -> None:
     """Fetch an org's metadata and write documentation artifacts."""
-    if access_token:
-        token = access_token
-        org_url = instance_url
-    else:
-        missing = [
-            flag
-            for flag, value in (
-                ("--client-id", client_id),
-                ("--private-key", private_key_path),
-                ("--username", username),
-            )
-            if not value
-        ]
-        if missing:
-            raise click.UsageError(
-                "Provide --access-token, or all of --client-id, --private-key, "
-                f"--username for JWT auth. Missing: {', '.join(missing)}."
-            )
-        token_url = SANDBOX_TOKEN_URL if sandbox else DEFAULT_TOKEN_URL
-        audience = AUD_SANDBOX if sandbox else AUD_PRODUCTION
-        try:
-            auth = get_access_token(
-                instance_url=instance_url,
-                client_id=client_id,
-                private_key_path=private_key_path,
-                username=username,
-                token_url=token_url,
-                audience=audience,
-            )
-        except AuthError as exc:
-            raise click.ClickException(str(exc)) from exc
-        token = auth["access_token"]
-        org_url = auth["instance_url"]
+    mode, org_url, token, alias = _resolve_auth(
+        target_org=target_org,
+        instance_url=instance_url,
+        access_token=access_token,
+        client_id=client_id,
+        private_key_path=private_key_path,
+        username=username,
+        sandbox=sandbox,
+    )
 
     def _progress(message: str, inline: bool) -> None:
         # Progress goes to stderr so it never pollutes the doc output. inline
@@ -189,10 +223,16 @@ def generate(
             timeout=timeout,
             progress=_progress,
             all_dmos=all_dmos,
+            org_name=org_name,
         )
+    except MetadataUnauthorized as exc:
+        hint = UNAUTHORIZED_HINTS[mode].format(alias=alias)
+        raise click.ClickException(
+            f"{hint} ({exc.detail if verbose else exc})"
+        ) from exc
     except MetadataError as exc:
         # Surface a clean one-line error and exit non-zero — never a traceback.
-        raise click.ClickException(str(exc)) from exc
+        raise click.ClickException(exc.detail if verbose else str(exc)) from exc
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -315,6 +355,99 @@ def _diff_error(message: str) -> click.ClickException:
     error = click.ClickException(message)
     error.exit_code = EXIT_ERROR
     return error
+
+
+def _resolve_auth(
+    *,
+    target_org: str | None,
+    instance_url: str | None,
+    access_token: str | None,
+    client_id: str | None,
+    private_key_path: str | None,
+    username: str | None,
+    sandbox: bool,
+) -> tuple[str, str, str, str | None]:
+    """Pick exactly one auth mode; return ``(mode, instance_url, token, alias)``.
+
+    Command-line auth flags win; the ``DATA360_*`` environment is consulted only
+    when none is given, so an exported token never conflicts with a flag.
+    """
+    values = {
+        "target_org": target_org,
+        "access_token": access_token,
+        "client_id": client_id,
+        "private_key_path": private_key_path,
+        "username": username,
+    }
+    if not any(values.values()):
+        values = {key: os.environ.get(env) or None for key, env in AUTH_ENV.items()}
+    jwt_given = values["client_id"] or values["private_key_path"] or values["username"]
+    modes = [
+        name
+        for name, given in (
+            ("--target-org", values["target_org"]),
+            ("--access-token", values["access_token"]),
+            ("JWT (--client-id/--private-key/--username)", jwt_given),
+        )
+        if given
+    ]
+    if len(modes) > 1:
+        raise click.UsageError(
+            f"Use exactly one way to sign in, got: {', '.join(modes)}."
+        )
+    if not modes:
+        raise click.UsageError(
+            "No credentials. Use --target-org ALIAS (an org you logged into with "
+            "`sf org login web --alias ALIAS`), --access-token, or JWT auth "
+            "(--client-id, --private-key, --username), or the matching "
+            "DATA360_* environment variables."
+        )
+
+    alias = values["target_org"]
+    if alias:
+        try:
+            url, token = org_credentials(alias)
+        except SfCliError as exc:
+            raise click.ClickException(str(exc)) from exc
+        return "target-org", url, token, alias
+
+    if not instance_url:
+        raise click.UsageError(
+            "--instance-url (or DATA360_INSTANCE_URL) is required with "
+            "--access-token or JWT auth."
+        )
+    if values["access_token"]:
+        return "access-token", instance_url, values["access_token"], None
+
+    missing = [
+        flag
+        for flag, key in (
+            ("--client-id", "client_id"),
+            ("--private-key", "private_key_path"),
+            ("--username", "username"),
+        )
+        if not values[key]
+    ]
+    if missing:
+        raise click.UsageError(
+            "JWT auth needs --client-id, --private-key and --username. "
+            f"Missing: {', '.join(missing)}."
+        )
+    key_path = str(values["private_key_path"])
+    if not Path(key_path).is_file():
+        raise click.UsageError(f"Private key file not found: {key_path}")
+    try:
+        auth = get_access_token(
+            instance_url=instance_url,
+            client_id=str(values["client_id"]),
+            private_key_path=key_path,
+            username=str(values["username"]),
+            token_url=SANDBOX_TOKEN_URL if sandbox else DEFAULT_TOKEN_URL,
+            audience=AUD_SANDBOX if sandbox else AUD_PRODUCTION,
+        )
+    except AuthError as exc:
+        raise click.ClickException(str(exc)) from exc
+    return "jwt", auth["instance_url"], auth["access_token"], None
 
 
 def _slug(value: str) -> str:

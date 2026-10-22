@@ -1,5 +1,9 @@
 # Data 360 schema drift check for GitHub Actions.
 #
+# RUN THIS ONLY IN A PRIVATE REPOSITORY. The baseline snapshot, the uploaded
+# artifact and the job summary list your org's objects and fields; in a public
+# repository anyone can read them (client schema under NDA included).
+#
 # Copy this file to .github/workflows/data360-drift.yml in a repository that
 # holds a baseline snapshot of your org. On a schedule (and on demand) it
 # fetches a fresh snapshot, diffs it against the committed baseline, writes the

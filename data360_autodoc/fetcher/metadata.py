@@ -25,6 +25,7 @@ from urllib.parse import urlencode
 from data360_autodoc.fetcher._http import (
     FetchError,
     NotFoundError,
+    UnauthorizedError,
     get_json,
     iter_pages,
 )
@@ -68,7 +69,18 @@ DMO_SCOPE_ALL: Final = "all"
 
 
 class MetadataError(RuntimeError):
-    """Raised when the org metadata cannot be retrieved."""
+    """Raised when the org metadata cannot be retrieved.
+
+    ``str()`` is the short, host-free message; ``detail`` the full one.
+    """
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail or message
+
+
+class MetadataUnauthorized(MetadataError):
+    """The access token was rejected (401): expired or invalid. Nothing is written."""
 
 
 def detect_api_version(
@@ -93,6 +105,8 @@ def detect_api_version(
         data = get_json(
             f"{base}/services/data/", access_token=access_token, timeout=timeout
         )
+    except UnauthorizedError:
+        raise  # an expired token must not silently fall back to an old version
     except FetchError:
         return fallback
 
@@ -145,16 +159,20 @@ def fetch_metadata(
     base = instance_url.rstrip("/")
     resolved_name = org_name or base.split("//", 1)[-1].split("/", 1)[0]
 
-    if api_version is None:
-        api_version = detect_api_version(
-            instance_url=instance_url, access_token=access_token, timeout=timeout
-        )
-    if progress:
-        progress(f"Using API version {api_version}", False)
-
     try:
+        if api_version is None:
+            api_version = detect_api_version(
+                instance_url=instance_url, access_token=access_token, timeout=timeout
+            )
+        if progress:
+            progress(f"Using API version {api_version}", False)
         dmo_entries = _fetch_dmo_list(
-            base, api_version, access_token, timeout, all_dmos=all_dmos
+            base,
+            api_version,
+            access_token,
+            timeout,
+            all_dmos=all_dmos,
+            progress=progress,
         )
         if progress:
             progress(f"Found {len(dmo_entries)} DMO(s); fetching metadata…", False)
@@ -178,11 +196,15 @@ def fetch_metadata(
             dmo_field_mappings, dlo_obj_label, dlo_field_labels
         )
         dmos = _enrich_dmo_field_types(dmos, dmo_field_mappings, dlo_field_types)
+    except UnauthorizedError as exc:
+        raise MetadataUnauthorized(str(exc), detail=exc.detail) from exc
     except (FetchError, StreamsError) as exc:
         # Single funnel for FATAL fetches (DMO list, DLO/streams): these become a
         # MetadataError the CLI renders cleanly. Per-DMO mapping/relationship
         # failures are NOT fatal — _fetch_dmo_details skips those DMOs instead.
-        raise MetadataError(str(exc)) from exc
+        raise MetadataError(
+            str(exc), detail=getattr(exc, "detail", None) or str(exc)
+        ) from exc
 
     if skipped:
         logger.warning(
@@ -213,6 +235,7 @@ def _fetch_dmo_list(
     timeout: float,
     *,
     all_dmos: bool = False,
+    progress: ProgressFn | None = None,
 ) -> list[tuple[str, str]]:
     """Return ``(name, label)`` for every enabled or custom DMO (or all of them).
 
@@ -244,8 +267,13 @@ def _fetch_dmo_list(
                 truncated = True
                 break
             out.append((name, entry.get("label") or name))
+        if progress:
+            # The list is slow (~0.2 s per DMO) and a new org has ~1,000.
+            progress(f"  Listing DMOs… {len(seen)} scanned", True)
         if truncated or len(entries) < _DMO_PAGE_SIZE:
             break
+    if progress and seen:
+        progress("", False)  # end the in-place counter line
     if truncated:
         logger.warning(
             "DMO list capped at %d; some DMOs were omitted from the document.",
@@ -479,6 +507,8 @@ def _fetch_dmo_details(
             typed_fields, dmo_rels = _fetch_dmo_relationships(
                 base, api_version, dataspace, dmo_name, access_token, timeout
             )
+        except UnauthorizedError:
+            raise  # not this DMO's fault: the whole run must stop
         except FetchError as exc:
             logger.warning("Skipping DMO %s: %s", dmo_name, exc)
             skipped.append(dmo_name)
