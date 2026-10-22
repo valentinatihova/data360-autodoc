@@ -8,8 +8,10 @@ Centralizing them here keeps the per-endpoint clients (``metadata.py``,
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Final, Iterator
+from urllib.parse import urlsplit
 
 import requests
 
@@ -18,11 +20,40 @@ _BACKOFF_BASE_SECONDS: Final = 1.0
 
 
 class FetchError(RuntimeError):
-    """Raised when a Data 360 API request fails (4xx, or retries exhausted)."""
+    """Raised when a Data 360 API request fails (4xx, or retries exhausted).
+
+    ``str()`` is short and host-free (path, status, Salesforce ``errorCode``) so
+    it is safe on a shared screen; ``detail`` keeps the full URL and response
+    body for ``--verbose``.
+    """
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail or message
 
 
 class NotFoundError(FetchError):
     """A 404: the requested resource does not exist (callers may treat as empty)."""
+
+
+class UnauthorizedError(FetchError):
+    """A 401: the access token is expired or invalid. Never skipped or retried."""
+
+
+def _where(url: str) -> str:
+    """The request path without host or query (no org domain, no object names)."""
+    return urlsplit(url).path
+
+
+def _error_code(body: str) -> str:
+    """Salesforce ``errorCode`` from an error body, or ``""``."""
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return ""
+    entry = data[0] if isinstance(data, list) and data else data
+    code = entry.get("errorCode") if isinstance(entry, dict) else None
+    return code if isinstance(code, str) else ""
 
 
 def get_json(url: str, *, access_token: str, timeout: float) -> Any:
@@ -44,11 +75,12 @@ def get_json(url: str, *, access_token: str, timeout: float) -> Any:
     """
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     last_error: str | None = None
+    last_detail: str | None = None
     for attempt in range(_MAX_ATTEMPTS):
         try:
             response = requests.get(url, headers=headers, timeout=timeout)
         except requests.RequestException as exc:
-            last_error = str(exc)
+            last_error, last_detail = type(exc).__name__, str(exc)
         else:
             if response.status_code == 204:
                 # Data 360 answers "nothing here" (e.g. a DMO with no
@@ -62,19 +94,30 @@ def get_json(url: str, *, access_token: str, timeout: float) -> Any:
                     # must become a FetchError, not leak a raw JSONDecodeError
                     # past the CLI's clean-error handler.
                     raise FetchError(
-                        f"Non-JSON 200 response from {url}: {exc}"
+                        f"Non-JSON 200 response from {_where(url)}",
+                        detail=f"Non-JSON 200 response from {url}: {exc}",
                     ) from exc
             if 400 <= response.status_code < 500:
-                error = NotFoundError if response.status_code == 404 else FetchError
-                raise error(
-                    f"Request rejected ({response.status_code}) for {url}: "
-                    f"{response.text[:500]}"
+                status = response.status_code
+                error = {401: UnauthorizedError, 404: NotFoundError}.get(
+                    status, FetchError
                 )
-            last_error = f"HTTP {response.status_code}: {response.text[:500]}"
+                code = _error_code(response.text)
+                raise error(
+                    f"Request rejected ({status}{', ' + code if code else ''}) "
+                    f"for {_where(url)}",
+                    detail=f"Request rejected ({status}) for {url}: "
+                    f"{response.text[:500]}",
+                )
+            last_error = f"HTTP {response.status_code}"
+            last_detail = f"HTTP {response.status_code}: {response.text[:500]}"
         if attempt < _MAX_ATTEMPTS - 1:
             time.sleep(_BACKOFF_BASE_SECONDS * (2**attempt))
     raise FetchError(
-        f"Request to {url} failed after {_MAX_ATTEMPTS} attempts: {last_error}"
+        f"Request to {_where(url)} failed after {_MAX_ATTEMPTS} attempts: "
+        f"{last_error}",
+        detail=f"Request to {url} failed after {_MAX_ATTEMPTS} attempts: "
+        f"{last_detail}",
     )
 
 
@@ -103,7 +146,10 @@ def iter_pages(
     next_url: str | None = first_url
     while next_url:
         if next_url in seen:
-            raise FetchError(f"Pagination cycle detected at {next_url}")
+            raise FetchError(
+                f"Pagination cycle detected at {_where(next_url)}",
+                detail=f"Pagination cycle detected at {next_url}",
+            )
         seen.add(next_url)
         page = get_json(next_url, access_token=access_token, timeout=timeout)
         yield page

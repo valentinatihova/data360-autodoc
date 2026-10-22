@@ -37,3 +37,68 @@ def test_streams_error_is_not_a_metadata_error() -> None:
     # Guards the test above: if StreamsError were a MetadataError subclass,
     # pytest.raises(MetadataError) would pass without any funneling.
     assert not issubclass(StreamsError, metadata.MetadataError)
+
+
+VERSIONS_URL = f"{INSTANCE_URL}/services/data/"
+
+
+@responses.activate
+def test_401_in_version_detection_is_not_hidden_by_the_fallback() -> None:
+    responses.add(responses.GET, VERSIONS_URL, status=401)
+    with pytest.raises(metadata.MetadataUnauthorized):
+        metadata.fetch_metadata(instance_url=INSTANCE_URL, access_token="TOK")
+
+
+@responses.activate
+def test_401_on_one_dmo_aborts_the_run_instead_of_skipping() -> None:
+    # CRITICAL regression: an expired token must not produce empty docs.
+    responses.add(
+        responses.GET,
+        DMO_URL,
+        json={
+            "dataModelObject": [
+                {"name": "A__dmo", "isEnabled": True},
+                {"name": "B__dmo", "isEnabled": True},
+            ]
+        },
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{INSTANCE_URL}/services/data/{API}/ssot/data-model-object-mappings",
+        status=401,
+    )
+    with pytest.raises(metadata.MetadataUnauthorized):
+        metadata.fetch_metadata(
+            instance_url=INSTANCE_URL, access_token="TOK", api_version=API
+        )
+
+
+@responses.activate
+def test_401_on_streams_is_unauthorized_not_a_generic_error() -> None:
+    responses.add(responses.GET, DMO_URL, json={"dataModelObject": []}, status=200)
+    responses.add(responses.GET, STREAMS_URL, status=401)
+    with pytest.raises(metadata.MetadataUnauthorized):
+        metadata.fetch_metadata(
+            instance_url=INSTANCE_URL, access_token="TOK", api_version=API
+        )
+
+
+@responses.activate
+def test_list_phase_reports_progress() -> None:
+    responses.add(
+        responses.GET,
+        DMO_URL,
+        json={"dataModelObject": [{"name": "Off__dmo", "isEnabled": False}]},
+        status=200,
+    )
+    responses.add(responses.GET, STREAMS_URL, json={"dataStreams": []}, status=200)
+    lines: list[str] = []
+    metadata.fetch_metadata(
+        instance_url=INSTANCE_URL,
+        access_token="TOK",
+        api_version=API,
+        progress=lambda message, inline: lines.append(message),
+    )
+    assert "  Listing DMOs… 1 scanned" in lines
+    assert "Fetching data streams…" in lines

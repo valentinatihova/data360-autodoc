@@ -1,0 +1,90 @@
+graph LR
+  Account_Home__dll["Account_Home"]
+  ssot__Account__dlm["Account"]
+  ssot__ContactPointAddress__dlm["Contact Point Address"]
+  ssot__ContactPointPhone__dlm["Contact Point Phone"]
+  ssot__FinancialCustomer__dlm["Financial Customer"]
+  ssot__Party__dlm["Party"]
+  BusinessHours_Home__dll["BusinessHours_Home"]
+  ssot__OperatingHours__dlm["Operating Hours"]
+  Campaign_Home__dll["Campaign_Home"]
+  ssot__Campaign__dlm["Campaign"]
+  Contact_Home__dll["Contact_Home"]
+  ssot__AccountContact__dlm["Account Contact"]
+  ssot__ContactPointEmail__dlm["Contact Point Email"]
+  ssot__Individual__dlm["Individual"]
+  DataCategory_Home__dll["DataCategory_Home"]
+  ssot__Category__dlm["Category"]
+  DataCategoryGroup_Home__dll["DataCategoryGroup_Home"]
+  EngagementChannelType_Home__dll["EngagementChannelType_Home"]
+  ssot__EngagementChannelType__dlm["Engagement Channel Type"]
+  ListEmail_Home__dll["ListEmail_Home"]
+  ssot__BulkEmailMessage__dlm["Bulk Email Message"]
+  ManagedContent_Home__dll["ManagedContent_Home"]
+  ssot__DigitalContent__dlm["Digital Content"]
+  MarketSegment_Home__dll["MarketSegment_Home"]
+  ssot__MarketSegment__dlm["Market Segment"]
+  OpportunityContactRole_Home__dll["OpportunityContactRole_Home"]
+  ssot__OpportunityContact__dlm["Opportunity Contact"]
+  Period_Home__dll["Period_Home"]
+  ssot__BusinessPeriod__dlm["Business Period"]
+  Pricebook2_Home__dll["Pricebook2_Home"]
+  ssot__PriceBook__dlm["Price Book"]
+  PricebookEntry_Home__dll["PricebookEntry_Home"]
+  ssot__PriceBookEntry__dlm["Price Book Entry"]
+  ProductCategory_Home__dll["ProductCategory_Home"]
+  ssot__ProductCategory__dlm["Product Category"]
+  Promotion_Home__dll["Promotion_Home"]
+  ssot__Promotion__dlm["Promotion"]
+  StaticCurrencyRates_Home__dll["StaticCurrencyRates_Home__dll"]
+  StaticCurrencyRates_Home__dlm["Static Currency Rates Home"]
+  Account_Home__dll --> ssot__Account__dlm
+  Account_Home__dll --> ssot__ContactPointAddress__dlm
+  Account_Home__dll --> ssot__ContactPointPhone__dlm
+  Account_Home__dll --> ssot__FinancialCustomer__dlm
+  Account_Home__dll --> ssot__Party__dlm
+  BusinessHours_Home__dll --> ssot__OperatingHours__dlm
+  Campaign_Home__dll --> ssot__Campaign__dlm
+  Contact_Home__dll --> ssot__AccountContact__dlm
+  Contact_Home__dll --> ssot__ContactPointAddress__dlm
+  Contact_Home__dll --> ssot__ContactPointEmail__dlm
+  Contact_Home__dll --> ssot__ContactPointPhone__dlm
+  Contact_Home__dll --> ssot__Individual__dlm
+  Contact_Home__dll --> ssot__Party__dlm
+  DataCategory_Home__dll --> ssot__Category__dlm
+  DataCategoryGroup_Home__dll --> ssot__Category__dlm
+  EngagementChannelType_Home__dll --> ssot__EngagementChannelType__dlm
+  ListEmail_Home__dll --> ssot__BulkEmailMessage__dlm
+  ManagedContent_Home__dll --> ssot__DigitalContent__dlm
+  MarketSegment_Home__dll --> ssot__MarketSegment__dlm
+  OpportunityContactRole_Home__dll --> ssot__OpportunityContact__dlm
+  Period_Home__dll --> ssot__BusinessPeriod__dlm
+  Pricebook2_Home__dll --> ssot__PriceBook__dlm
+  PricebookEntry_Home__dll --> ssot__PriceBookEntry__dlm
+  ProductCategory_Home__dll --> ssot__ProductCategory__dlm
+  Promotion_Home__dll --> ssot__Promotion__dlm
+  StaticCurrencyRates_Home__dll --> StaticCurrencyRates_Home__dlm
+  ssot__Account__dlm -.->|N:1| ssot__ContactPointAddress__dlm
+  ssot__Account__dlm -.->|N:1| ssot__ContactPointPhone__dlm
+  ssot__Account__dlm -.->|N:1| ssot__Account__dlm
+  ssot__AccountContact__dlm -.->|N:1| ssot__ContactPointPhone__dlm
+  ssot__AccountContact__dlm -.->|N:1| ssot__ContactPointEmail__dlm
+  ssot__AccountContact__dlm -.->|N:1| ssot__Individual__dlm
+  ssot__AccountContact__dlm -.->|N:1| ssot__ContactPointAddress__dlm
+  ssot__AccountContact__dlm -.->|N:1| ssot__AccountContact__dlm
+  ssot__BulkEmailMessage__dlm -.->|N:1| ssot__Campaign__dlm
+  ssot__Campaign__dlm -.->|N:1| ssot__Campaign__dlm
+  ssot__ContactPointAddress__dlm -.->|N:1| ssot__Account__dlm
+  ssot__ContactPointAddress__dlm -.->|N:1| ssot__Party__dlm
+  ssot__ContactPointEmail__dlm -.->|N:1| ssot__Account__dlm
+  ssot__ContactPointEmail__dlm -.->|N:1| ssot__Individual__dlm
+  ssot__ContactPointPhone__dlm -.->|N:1| ssot__Account__dlm
+  ssot__ContactPointPhone__dlm -.->|N:1| ssot__Individual__dlm
+  ssot__FinancialCustomer__dlm -.->|N:1| ssot__Account__dlm
+  ssot__Individual__dlm -.->|N:1| ssot__Party__dlm
+  ssot__Individual__dlm -.->|N:1| ssot__Account__dlm
+  ssot__OpportunityContact__dlm -.->|N:1| ssot__AccountContact__dlm
+  ssot__Party__dlm -.->|N:1| ssot__Individual__dlm
+  ssot__PriceBookEntry__dlm -.->|N:1| ssot__PriceBook__dlm
+  ssot__ProductCategory__dlm -.->|N:1| ssot__ProductCategory__dlm
+  ssot__Promotion__dlm -.->|N:1| ssot__Campaign__dlm

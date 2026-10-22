@@ -4,9 +4,40 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [Unreleased]
+## [0.4.0] - 2026-10-22
+
+### Added
+- `generate --target-org ALIAS`: reuse an org you logged into with the
+  Salesforce CLI (`sf org login web --alias ALIAS`); no connected app or JWT
+  key needed. The token is taken from `sf org display` and never printed.
+- Sign-in settings from the environment (`DATA360_TARGET_ORG`,
+  `DATA360_ACCESS_TOKEN`, `DATA360_INSTANCE_URL`, `DATA360_CLIENT_ID`,
+  `DATA360_PRIVATE_KEY`, `DATA360_USERNAME`), read only when no sign-in flag is
+  given, so tokens stay out of the process list.
+- `generate --org-name` (document title and file name) and `--verbose` (full
+  error detail).
+- A live "Listing DMOs… N scanned" counter while the DMO list loads.
+- README opens with a screenshot and a full sample report generated from a
+  Developer Edition org (`examples/sample-report/`, host redacted).
+- `generate --all-dmos` documents every DMO. The default is enabled standard
+  DMOs plus all custom DMOs (previously custom DMOs that were not enabled were
+  dropped). The snapshot records the choice as `dmo_scope`, and `diff` warns
+  (Markdown, JSON `warnings`, stderr) when two snapshots used different scopes.
+
+### Changed
+- Exactly one sign-in mode per run (`--target-org`, `--access-token`, or JWT);
+  combining them is a usage error instead of one silently winning.
+  `--instance-url` is no longer required with `--target-org`.
+- Error messages are short and host-free (path, status and Salesforce
+  `errorCode`), safe on a shared screen; `--verbose` shows the full URL and
+  API response.
+- README quick start leads with `pipx` / `uvx` and `--target-org`.
 
 ### Fixed
+- An expired or invalid token (HTTP 401) no longer produces empty
+  documentation: per-DMO 401s were skipped as "DMO errors", and version
+  detection silently fell back to v62.0. The run now stops with a hint for the
+  sign-in mode in use (e.g. `sf org login web --alias ALIAS`).
 - `generate` failed on new orgs (for example a fresh Developer Edition with
   ~1,000 standard DMOs). The DMO list was requested as one 500-row page (about
   100 s, past the timeout). The endpoint returns no `nextPageUrl`, so DMOs past
@@ -14,12 +45,6 @@ semantic versioning.
   `offset`.
 - DMOs with no relationships (HTTP 204) or no DLO mappings (HTTP 404) were
   skipped as errors after retries; they are now documented with empty sections.
-
-### Added
-- `generate --all-dmos` documents every DMO. The default is enabled standard
-  DMOs plus all custom DMOs (previously custom DMOs that were not enabled were
-  dropped). The snapshot records the choice as `dmo_scope`, and `diff` warns
-  (Markdown, JSON `warnings`, stderr) when two snapshots used different scopes.
 
 ## [0.3.0] - 2026-10-21
 

@@ -5,9 +5,21 @@
 [![Tests](https://github.com/valentinatihova/data360-autodoc/actions/workflows/tests.yml/badge.svg)](https://github.com/valentinatihova/data360-autodoc/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Auto-generate human-readable documentation for Salesforce Data 360 (Data Cloud) orgs — in seconds, not days.**
+**Auto-generate human-readable documentation for Salesforce Data 360 (Data Cloud) orgs — in minutes, not days.**
 
 Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, keys), the data streams and field-level mappings behind them, the DMO relationship graph, an ERD, and a deterministic JSON snapshot.
+
+## See the result first
+
+[![Sample output: DLO → DMO mapping graph and a DMO field table](https://raw.githubusercontent.com/valentinatihova/data360-autodoc/main/docs/images/sample-report.png)](https://github.com/valentinatihova/data360-autodoc/blob/main/examples/sample-report/acme-data-cloud-developer-edition.md)
+
+This is real output from a Salesforce **Developer Edition** org (the standard data model and its built-in CRM data streams, no customer data; host name redacted): 22 DMOs, 17 DLOs, 26 mappings. Browse the full sample:
+
+- 📓 [Data dictionary (Markdown)](https://github.com/valentinatihova/data360-autodoc/blob/main/examples/sample-report/acme-data-cloud-developer-edition.md)
+- 🔗 [DLO → DMO graph (Mermaid)](https://github.com/valentinatihova/data360-autodoc/blob/main/examples/sample-report/acme-data-cloud-developer-edition.mmd)
+- 🧊 [JSON snapshot (input for `diff`)](https://github.com/valentinatihova/data360-autodoc/blob/main/examples/sample-report/acme-data-cloud-developer-edition.json)
+
+What it covers:
 
 - 📓 **Data dictionary** — every DMO and DLO as clean Markdown tables, with field names, types, and keys.
 - 🌊 **Data streams + field mappings** — per-stream source/refresh metadata, the Stream → DLO field map, and the DLO → DMO field map (with real labels, not just API names).
@@ -17,36 +29,49 @@ Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, k
 
 ## For who
 
-Built for **Salesforce SI consultants and Data Cloud practitioners** who lose days hand-writing org documentation for every engagement. It works against any Data 360 org you can authenticate to with a connected app, and is **tested against Developer Edition / Data Cloud dev orgs** — try it on a sandbox before pointing it at a client. If your org has a shape it doesn't handle yet, [open an issue](https://github.com/valentinatihova/data360-autodoc/issues) and it gets fixed.
+Built for **Salesforce SI consultants and Data Cloud practitioners** who lose days hand-writing org documentation for every engagement. It works against any Data 360 org you can log into with the Salesforce CLI (or a connected app), and is **tested against Developer Edition / Data Cloud dev orgs** — try it on a sandbox before pointing it at a client. If your org has a shape it doesn't handle yet, [open an issue](https://github.com/valentinatihova/data360-autodoc/issues) and it gets fixed.
 
 ## Quick start
 
+Needs Python 3.11+. `pipx` (or `uvx`) installs it in its own environment, so an older system Python doesn't get in the way:
+
 ```bash
-pip install data360-autodoc
+pipx install data360-autodoc        # or: uvx data360-autodoc ..., or: pip install data360-autodoc
 
-data360-autodoc generate \
-  --instance-url https://mydomain.my.salesforce.com \
-  --client-id <connected-app-consumer-key> \
-  --private-key ./server.pem \
-  --username admin@myorg.com \
-  --output ./docs \
-  --format all
+sf org login web --alias my-org     # once: reuse your Salesforce CLI login, no connected app needed
+data360-autodoc generate --target-org my-org --output ./docs
 ```
 
 ```
-Wrote acme-data-cloud.md
-Wrote acme-data-cloud.mmd
-Wrote acme-data-cloud.json
-Generated docs for 24 DMOs, 11 DLOs, 0 Identity Rulesets
+Using API version v68.0
+  Listing DMOs… 1046 scanned
+Found 22 DMO(s); fetching metadata…
+Fetching data streams…
+Wrote mydomain-my-salesforce-com.md
+Wrote mydomain-my-salesforce-com.mmd
+Wrote mydomain-my-salesforce-com.json
+Generated docs for 22 DMOs, 17 DLOs, 0 Identity Rulesets
 ```
 
-Authentication uses the **OAuth 2.0 JWT Bearer flow** (connected app + private key — no passwords stored).
+A new org lists about a thousand standard DMOs, so the first step takes a few minutes; the counter shows progress.
 
-**Options that affect the metadata fetch:**
+**Ways to sign in** (use exactly one):
 
-- `--sandbox` — authenticate against `test.salesforce.com` (sandbox / scratch orgs).
+| Mode | Flags | Environment variables |
+|------|-------|-----------------------|
+| Salesforce CLI session (easiest) | `--target-org ALIAS` | `DATA360_TARGET_ORG` |
+| Access token | `--instance-url URL --access-token TOKEN` | `DATA360_INSTANCE_URL`, `DATA360_ACCESS_TOKEN` |
+| JWT bearer (CI, connected app + private key) | `--instance-url URL --client-id KEY --private-key server.pem --username USER` | `DATA360_INSTANCE_URL`, `DATA360_CLIENT_ID`, `DATA360_PRIVATE_KEY`, `DATA360_USERNAME` |
+
+Environment variables are read only when no sign-in flag is given, and keep tokens out of the process list. If the session has expired, you get a one-line hint (for `--target-org`: run `sf org login web --alias ALIAS` again) instead of empty docs.
+
+**Other options:**
+
+- `--org-name "Acme Prod"` — document title and output file name (default: the org's host name).
+- `--sandbox` — JWT auth against `test.salesforce.com` (sandbox / scratch orgs).
 - `--all-dmos` — document every DMO. By default only the DMOs your org uses are documented: **enabled** standard DMOs plus all **custom** DMOs. A new org lists about a thousand disabled standard DMOs, which would only add empty tables. The choice is recorded in the JSON snapshot, and `diff` warns if two snapshots used different settings.
 - `--api-version` — the Salesforce REST API version used for the `/ssot/*` metadata calls (e.g. `v62.0`). **By default the tool auto-detects your org's highest supported version** (from `GET /services/data/`), so you normally don't set this. Force it only if auto-detection picks a version where a Data Cloud endpoint misbehaves, or to pin output to a specific version. It must be a valid Salesforce REST API version your org supports.
+- `--verbose` — errors are short by default (no host name or API response body, safe on a shared screen); this shows the full detail.
 
 (The `Identity Rulesets` count is currently always `0` — see "Not supported yet" below.)
 
