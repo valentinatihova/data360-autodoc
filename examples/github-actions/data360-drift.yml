@@ -5,25 +5,31 @@
 # repository anyone can read them (client schema under NDA included).
 #
 # Copy this file to .github/workflows/data360-drift.yml in a repository that
-# holds a baseline snapshot of your org. On a schedule (and on demand) it
-# fetches a fresh snapshot, diffs it against the committed baseline, writes the
-# Markdown drift report to the job summary, and FAILS the run when the org's
-# schema has drifted — so a red run is your drift alert.
+# holds a baseline snapshot of your org. Weekly, on demand, and on pull requests
+# that touch the snapshots, it signs in with the Salesforce CLI, takes a fresh
+# snapshot, diffs it against the committed baseline, writes the Markdown report
+# to the job summary, and FAILS the run when the org's schema has drifted, so a
+# red run is your drift alert.
 #
 # One-time setup:
-#   1. Generate and commit a baseline snapshot:
-#        data360-autodoc generate ... --format json --output snapshots
-#      The file is named after the org (e.g. snapshots/acme-data-cloud.json);
-#      point BASELINE below at it.
-#   2. Add repository secrets (Settings → Secrets and variables → Actions):
+#   1. Take and commit a baseline (named by --org-name, so the file name is
+#      stable):
+#        data360-autodoc generate --target-org my-org --org-name prod \
+#          --format json --output snapshots
+#        git add snapshots/prod.json && git commit -m "Data 360 baseline"
+#   2. Add repository secrets (Settings → Secrets and variables → Actions) for
+#      JWT sign-in with a connected app:
 #        SF_INSTANCE_URL  https://<your-domain>.my.salesforce.com
 #        SF_CLIENT_ID     connected app consumer key
-#        SF_USERNAME      integration user the JWT bearer flow impersonates
+#        SF_USERNAME      integration user (needs read access to Data Cloud)
 #        SF_PRIVATE_KEY   full text of the connected app's PEM private key
-#      (Sandbox? add --sandbox to the generate command.)
+#
+# Exit codes: 0 no drift, 1 drift (fails the job), 2 any error. `--strict`
+# makes `generate` fail instead of writing a partial snapshot when a DMO can't
+# be read, so a transient API error never shows up as "DMO removed".
 #
 # Accepting drift: download the "data360-drift" artifact from the failed run,
-# replace the baseline with current/<org>.json, and commit it.
+# replace snapshots/prod.json with current/prod.json, and commit it.
 
 name: Data 360 schema drift
 
@@ -31,15 +37,22 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Mondays 06:00 UTC
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "snapshots/**"
 
 permissions:
   contents: read
 
 jobs:
   drift:
+    # Pull requests from forks get no secrets: skip instead of failing.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     env:
-      BASELINE: snapshots/acme-data-cloud.json
+      ORG_NAME: prod
     steps:
       - uses: actions/checkout@v4
 
@@ -47,10 +60,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install data360-autodoc
-        run: pip install "data360-autodoc>=0.3.0"
+      - name: Install data360-autodoc and the Salesforce CLI
+        run: |
+          pip install "data360-autodoc>=0.4.1,<0.5"
+          npm install --global @salesforce/cli@2
 
-      - name: Fetch current snapshot
+      - name: Sign in with the Salesforce CLI (JWT)
         env:
           SF_INSTANCE_URL: ${{ secrets.SF_INSTANCE_URL }}
           SF_CLIENT_ID: ${{ secrets.SF_CLIENT_ID }}
@@ -60,22 +75,24 @@ jobs:
           key="$RUNNER_TEMP/server.pem"
           trap 'rm -f "$key"' EXIT
           (umask 077 && printf '%s\n' "$SF_PRIVATE_KEY" > "$key")
-          data360-autodoc generate \
+          sf org login jwt \
             --instance-url "$SF_INSTANCE_URL" \
             --client-id "$SF_CLIENT_ID" \
             --username "$SF_USERNAME" \
-            --private-key "$key" \
-            --format json \
-            --output current
+            --jwt-key-file "$key" \
+            --alias ci-org > /dev/null
 
-      - name: Diff against baseline
-        # Exit code 1 = drift detected (fails the job), 2 = any error.
+      - name: Take a fresh snapshot
         run: |
-          data360-autodoc diff "$BASELINE" "current/$(basename "$BASELINE")" \
-            --output drift/drift.md \
-            --fail-on-change
+          data360-autodoc generate --target-org ci-org --org-name "$ORG_NAME" \
+            --format json --output current --strict
 
-      - name: Publish drift report to the job summary
+      - name: Diff against the baseline
+        run: |
+          data360-autodoc diff "snapshots/$ORG_NAME.json" "current/$ORG_NAME.json" \
+            --output drift/drift.md --fail-on-change
+
+      - name: Publish the drift report to the job summary
         if: always()
         run: |
           if [ -f drift/drift.md ]; then

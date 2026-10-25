@@ -256,3 +256,22 @@ def test_org_name_sets_title_and_file_name(tmp_path: Path, _offline: dict) -> No
     assert result.exit_code == 0, result.output
     assert _offline["org_name"] == "Acme Demo"
     assert (tmp_path / "acme-demo.json").exists()
+
+
+def test_strict_is_passed_to_fetch(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--target-org", "acme", "--strict")
+    assert result.exit_code == 0, result.output
+    assert _offline["strict"] is True
+
+
+def test_strict_failure_writes_nothing(tmp_path: Path, monkeypatch) -> None:
+    _reject(
+        monkeypatch,
+        MetadataError(
+            "1 of 2 DMO(s) could not be read; no snapshot written (--strict)."
+        ),
+    )
+    result = _generate(tmp_path, "--target-org", "acme", "--strict")
+    assert result.exit_code == 1
+    assert "no snapshot written" in result.output + result.stderr
+    assert list(tmp_path.iterdir()) == []

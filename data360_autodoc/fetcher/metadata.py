@@ -135,6 +135,7 @@ def fetch_metadata(
     timeout: float = 60.0,
     progress: ProgressFn | None = None,
     all_dmos: bool = False,
+    strict: bool = False,
 ) -> OrgSchema:
     """Fetch and normalize the full org schema from the Connect REST API.
 
@@ -149,6 +150,9 @@ def fetch_metadata(
         timeout: Per-request timeout in seconds.
         all_dmos: Document every DMO, including the disabled standard ones a new
             org lists by the hundred. Default: enabled and custom DMOs only.
+        strict: Fail instead of returning a partial schema when any DMO could
+            not be read. Use in CI: a partial snapshot would diff as "DMO
+            removed" drift.
 
     Returns:
         A sorted :class:`~models.OrgSchema`.
@@ -213,6 +217,12 @@ def fetch_metadata(
             len(dmo_entries),
             ", ".join(skipped),
         )
+        if strict:
+            raise MetadataError(
+                f"{len(skipped)} of {len(dmo_entries)} DMO(s) could not be read; "
+                "no snapshot written (--strict).",
+                detail=f"DMO(s) that could not be read: {', '.join(skipped)}",
+            )
 
     return OrgSchema.build(
         org_name=resolved_name,

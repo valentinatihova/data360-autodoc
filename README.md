@@ -71,6 +71,7 @@ Environment variables are read only when no sign-in flag is given, and keep toke
 - `--sandbox` — JWT auth against `test.salesforce.com` (sandbox / scratch orgs).
 - `--all-dmos` — document every DMO. By default only the DMOs your org uses are documented: **enabled** standard DMOs plus all **custom** DMOs. A new org lists about a thousand disabled standard DMOs, which would only add empty tables. The choice is recorded in the JSON snapshot, and `diff` warns if two snapshots used different settings.
 - `--api-version` — the Salesforce REST API version used for the `/ssot/*` metadata calls (e.g. `v62.0`). **By default the tool auto-detects your org's highest supported version** (from `GET /services/data/`), so you normally don't set this. Force it only if auto-detection picks a version where a Data Cloud endpoint misbehaves, or to pin output to a specific version. It must be a valid Salesforce REST API version your org supports.
+- `--strict` — fail (and write nothing) if any DMO can't be read, instead of writing a partial snapshot. Use it in CI before `diff`.
 - `--verbose` — errors are short by default (no host name or API response body, safe on a shared screen); this shows the full detail.
 
 (The `Identity Rulesets` count is currently always `0` — see "Not supported yet" below.)
@@ -218,17 +219,50 @@ The snapshot timestamp, display labels on mapping and stream rows, and the `(via
 - `--output FILE` — write the report to a file instead of stdout. A one-line summary (`Schema drift: 18 changes` / `No schema drift.`) always goes to stderr, so piped stdout stays a clean report.
 - `--fail-on-change` — exit with status `1` when anything drifted. Without it, `diff` exits `0` whether or not drift was found. Any error (an unreadable, malformed or incompatible snapshot, or a report that can't be written) exits `2`, so it is never mistaken for drift.
 
-### Drift checks in CI
+### Run drift checks in CI
 
-[`examples/github-actions/data360-drift.yml`](examples/github-actions/data360-drift.yml) is a ready-to-copy GitHub Actions workflow: on a weekly schedule it fetches a fresh snapshot with JWT auth from repository secrets, diffs it against a baseline committed to the repo, writes the drift report to the job summary, uploads the new snapshot as an artifact, and fails the run when the schema drifted. The core of it:
+Commit a baseline snapshot, then let CI take a fresh one on a schedule and fail when the org drifted from it. `diff --fail-on-change` exits `0` (no drift), `1` (drift) or `2` (error: unreadable snapshot, bad usage), so a red run means "schema changed" and nothing else. `generate --strict` refuses to write a partial snapshot when a DMO can't be read, so a transient API error never turns into a false "DMO removed".
+
+**Run it only in a private repository**: the baseline, the report and the artifact list your org's objects and fields.
 
 ```bash
-data360-autodoc generate ... --format json --output current
-data360-autodoc diff snapshots/acme-data-cloud.json current/acme-data-cloud.json \
-  --output drift/drift.md --fail-on-change
+# once, locally: take the baseline (--org-name keeps the file name stable)
+data360-autodoc generate --target-org my-org --org-name prod --format json --output snapshots
+git add snapshots/prod.json && git commit -m "Data 360 baseline"
 ```
 
-To accept a change, replace the baseline with the new snapshot and commit it.
+```yaml
+# .github/workflows/data360-drift.yml (minimal)
+name: Data 360 schema drift
+on:
+  schedule: [{ cron: "0 6 * * 1" }]   # weekly
+  pull_request: { paths: ["snapshots/**"] }
+jobs:
+  drift:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: |
+          pip install "data360-autodoc>=0.4.1,<0.5"
+          npm install --global @salesforce/cli@2
+      - name: Sign in (JWT, secrets from the repo settings)
+        env:
+          SF_PRIVATE_KEY: ${{ secrets.SF_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$SF_PRIVATE_KEY" > "$RUNNER_TEMP/server.pem"
+          sf org login jwt --instance-url "${{ secrets.SF_INSTANCE_URL }}" \
+            --client-id "${{ secrets.SF_CLIENT_ID }}" --username "${{ secrets.SF_USERNAME }}" \
+            --jwt-key-file "$RUNNER_TEMP/server.pem" --alias ci-org > /dev/null
+      - run: data360-autodoc generate --target-org ci-org --org-name prod --format json --output current --strict
+      - run: data360-autodoc diff snapshots/prod.json current/prod.json --output drift.md --fail-on-change
+      - if: always()
+        run: cat drift.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+```
+
+The full version, [`examples/github-actions/data360-drift.yml`](examples/github-actions/data360-drift.yml), also removes the key file after sign-in, runs on demand, and uploads the new snapshot as an artifact. To accept a change, replace `snapshots/prod.json` with the new snapshot and commit it. For scripts, `diff --format json` gives `has_changes`, `change_count` and a per-area `summary`.
 
 ## License
 

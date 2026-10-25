@@ -175,6 +175,13 @@ def cli() -> None:
     help="Document title and output file name (default: the org's host name).",
 )
 @click.option(
+    "--strict",
+    is_flag=True,
+    default=False,
+    help="Fail (and write nothing) if any DMO could not be read, instead of "
+    "writing a partial snapshot. Recommended in CI before `diff`.",
+)
+@click.option(
     "--verbose",
     is_flag=True,
     default=False,
@@ -194,6 +201,7 @@ def generate(
     timeout: float,
     all_dmos: bool,
     org_name: str | None,
+    strict: bool,
     verbose: bool,
 ) -> None:
     """Fetch an org's metadata and write documentation artifacts."""
@@ -224,6 +232,7 @@ def generate(
             progress=_progress,
             all_dmos=all_dmos,
             org_name=org_name,
+            strict=strict,
         )
     except MetadataUnauthorized as exc:
         hint = UNAUTHORIZED_HINTS[mode].format(alias=alias)
