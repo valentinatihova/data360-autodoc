@@ -68,6 +68,7 @@ Environment variables are read only when no sign-in flag is given, and keep toke
 **Other options:**
 
 - `--org-name "Acme Prod"` — document title and output file name (default: the org's host name).
+- `--diagram-image svg|png` — also draw the Mermaid diagram as an image, for Confluence and other tools that don't render Mermaid. Needs [mermaid-cli](https://github.com/mermaid-js/mermaid-cli) (`npm install --global @mermaid-js/mermaid-cli`); without it you get a warning and the rest of the docs as usual.
 - `--sandbox` — JWT auth against `test.salesforce.com` (sandbox / scratch orgs).
 - `--all-dmos` — document every DMO. By default only the DMOs your org uses are documented: **enabled** standard DMOs plus all **custom** DMOs. A new org lists about a thousand disabled standard DMOs, which would only add empty tables. The choice is recorded in the JSON snapshot, and `diff` warns if two snapshots used different settings.
 - `--api-version` — the Salesforce REST API version used for the `/ssot/*` metadata calls (e.g. `v62.0`). **By default the tool auto-detects your org's highest supported version** (from `GET /services/data/`), so you normally don't set this. Force it only if auto-detection picks a version where a Data Cloud endpoint misbehaves, or to pin output to a specific version. It must be a valid Salesforce REST API version your org supports.

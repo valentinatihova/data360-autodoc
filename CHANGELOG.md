@@ -13,6 +13,10 @@ semantic versioning.
   now signs in with `sf org login jwt` + `--target-org`, uses a stable snapshot
   name (`--org-name`), `--strict`, and also runs on pull requests that change
   the baseline (skipped for forks, which get no secrets).
+- `generate --diagram-image svg|png` draws the Mermaid diagram as an image
+  next to the `.mmd` (for Confluence and other tools that don't render
+  Mermaid). Uses mermaid-cli (`mmdc`) if installed; otherwise a warning with
+  the install command, and the rest of the docs are written as usual.
 
 ## [0.4.0] - 2026-10-22
 

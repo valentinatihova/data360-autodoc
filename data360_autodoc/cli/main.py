@@ -52,6 +52,11 @@ from data360_autodoc.fetcher.metadata import (
     fetch_metadata,
 )
 from data360_autodoc.fetcher.sf_cli import SfCliError, org_credentials
+from data360_autodoc.generator.diagram_image import (
+    IMAGE_FORMATS,
+    DiagramImageError,
+    render_diagram_image,
+)
 from data360_autodoc.generator.drift import render_diff_json, render_diff_markdown
 from data360_autodoc.generator.markdown import render_markdown
 from data360_autodoc.generator.mermaid import render_mermaid
@@ -175,6 +180,14 @@ def cli() -> None:
     help="Document title and output file name (default: the org's host name).",
 )
 @click.option(
+    "--diagram-image",
+    "diagram_image",
+    type=click.Choice(IMAGE_FORMATS),
+    default=None,
+    help="Also draw the Mermaid diagram as an SVG or PNG (for Confluence and other "
+    "tools that don't render Mermaid). Needs mermaid-cli (mmdc).",
+)
+@click.option(
     "--strict",
     is_flag=True,
     default=False,
@@ -201,10 +214,16 @@ def generate(
     timeout: float,
     all_dmos: bool,
     org_name: str | None,
+    diagram_image: str | None,
     strict: bool,
     verbose: bool,
 ) -> None:
     """Fetch an org's metadata and write documentation artifacts."""
+    if diagram_image and output_format not in ("markdown", "all"):
+        # Checked before the (slow) fetch: the image is drawn from the .mmd.
+        raise click.UsageError(
+            "--diagram-image needs the Mermaid diagram: use --format markdown or all."
+        )
     mode, org_url, token, alias = _resolve_auth(
         target_org=target_org,
         instance_url=instance_url,
@@ -259,6 +278,12 @@ def generate(
         mmd_path = out_dir / f"{base}.mmd"
         mmd_path.write_text(render_mermaid(schema) + "\n", encoding="utf-8")
         written.append(mmd_path.name)
+        if diagram_image:
+            try:
+                written.append(render_diagram_image(mmd_path, diagram_image).name)
+            except DiagramImageError as exc:
+                # The docs are still useful without the picture: warn, don't fail.
+                click.echo(f"Warning: {exc}", err=True)
 
     if want_json:
         json_path = out_dir / f"{base}.json"
