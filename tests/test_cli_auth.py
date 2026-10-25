@@ -294,3 +294,66 @@ def test_token_mode_keeps_the_host_default(tmp_path: Path, _offline: dict) -> No
     result = _generate(tmp_path, "--instance-url", URL, "--access-token", "T")
     assert result.exit_code == 0, result.output
     assert _offline["org_name"] is None  # fetch_metadata falls back to the host
+
+
+def test_diagram_image_is_written_and_listed(tmp_path: Path, monkeypatch) -> None:
+    def fake_render(mmd_path, fmt):
+        out = mmd_path.with_suffix(f".{fmt}")
+        out.write_text("<svg/>", encoding="utf-8")
+        return out
+
+    monkeypatch.setattr(cli_main, "render_diagram_image", fake_render)
+    result = _runner().invoke(
+        cli_main.cli,
+        [
+            "generate",
+            "--output",
+            str(tmp_path),
+            "--format",
+            "markdown",
+            "--target-org",
+            "acme",
+            "--org-name",
+            "Acme",
+            "--diagram-image",
+            "svg",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Wrote acme.svg" in result.output
+    assert (tmp_path / "acme.svg").exists()
+
+
+def test_missing_mmdc_warns_but_still_writes_docs(tmp_path: Path, monkeypatch) -> None:
+    from data360_autodoc.generator.diagram_image import DiagramImageError
+
+    def no_mmdc(mmd_path, fmt):
+        raise DiagramImageError("mermaid-cli (mmdc) not found")
+
+    monkeypatch.setattr(cli_main, "render_diagram_image", no_mmdc)
+    result = _runner().invoke(
+        cli_main.cli,
+        [
+            "generate",
+            "--output",
+            str(tmp_path),
+            "--format",
+            "markdown",
+            "--target-org",
+            "acme",
+            "--org-name",
+            "Acme",
+            "--diagram-image",
+            "png",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Warning: mermaid-cli (mmdc) not found" in result.output + result.stderr
+    assert (tmp_path / "acme.md").exists()
+
+
+def test_diagram_image_needs_markdown_output(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--target-org", "acme", "--diagram-image", "svg")
+    assert result.exit_code == 2  # _generate uses --format json
+    assert "--format markdown or all" in result.output + result.stderr
+    assert "alias" not in _offline  # rejected before signing in or fetching
