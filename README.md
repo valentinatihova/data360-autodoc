@@ -11,6 +11,10 @@ Point it at an org and it produces a full data dictionary (DMOs, DLOs, fields, k
 
 ## See the result first
 
+![Terminal demo: generate --target-org lists the org's DMOs, writes Markdown, Mermaid and JSON, then shows the start of the data dictionary](https://raw.githubusercontent.com/valentinatihova/data360-autodoc/main/docs/images/demo.gif)
+
+*A real run against a Developer Edition org. The ~2.5-minute wait while it lists about a thousand standard DMOs is sped up 30×.*
+
 [![Sample output: DLO → DMO mapping graph and a DMO field table](https://raw.githubusercontent.com/valentinatihova/data360-autodoc/main/docs/images/sample-report.png)](https://github.com/valentinatihova/data360-autodoc/blob/main/examples/sample-report/acme-data-cloud-developer-edition.md)
 
 This is real output from a Salesforce **Developer Edition** org (the standard data model and its built-in CRM data streams, no customer data; host name redacted): 22 DMOs, 17 DLOs, 26 mappings. Browse the full sample:
