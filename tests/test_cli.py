@@ -104,6 +104,12 @@ def test_format_markdown_no_json(key_file: str, tmp_path: Path) -> None:
     assert not (out / "acme-data-cloud.json").exists()
 
 
+def test_format_all_has_no_pdf_stub_message(key_file: str, tmp_path: Path) -> None:
+    result = CliRunner().invoke(cli_main.cli, _args(key_file, tmp_path, "all"))
+    assert result.exit_code == 0, result.output
+    assert "not yet implemented" not in result.output
+
+
 def test_pdf_is_stubbed(key_file: str, tmp_path: Path) -> None:
     result = CliRunner().invoke(cli_main.cli, _args(key_file, tmp_path, "pdf"))
     assert result.exit_code == 0, result.output
