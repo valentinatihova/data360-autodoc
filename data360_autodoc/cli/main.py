@@ -16,7 +16,7 @@ Outputs are selected with ``--format``:
 - ``markdown`` — human-readable ``.md`` plus a ``.mmd`` Mermaid diagram
 - ``json``     — deterministic ``.json`` snapshot (the drift-detection seam)
 - ``pdf``      — not yet implemented (stub; warns and skips)
-- ``all``      — markdown + json (+ pdf stub warning)
+- ``all``      — markdown + json (PDF is left out until it exists)
 
 The ``.json`` snapshot is a first-class output, not a debug artifact: the
 ``diff`` command loads two snapshots and reports the schema drift between them::
@@ -177,7 +177,8 @@ def cli() -> None:
 @click.option(
     "--org-name",
     default=None,
-    help="Document title and output file name (default: the org's host name).",
+    help="Document title and output file name (default: the alias with "
+    "--target-org, otherwise the org's host name).",
 )
 @click.option(
     "--diagram-image",
@@ -250,7 +251,9 @@ def generate(
             timeout=timeout,
             progress=_progress,
             all_dmos=all_dmos,
-            org_name=org_name,
+            # With --target-org the alias is a friendlier default name than the
+            # host, and keeps the org's domain off a shared screen.
+            org_name=org_name or alias,
             strict=strict,
         )
     except MetadataUnauthorized as exc:
@@ -269,7 +272,7 @@ def generate(
     written: list[str] = []
     want_markdown = output_format in ("markdown", "all")
     want_json = output_format in ("json", "all")
-    want_pdf = output_format in ("pdf", "all")
+    want_pdf = output_format == "pdf"
 
     if want_markdown:
         md_path = out_dir / f"{base}.md"

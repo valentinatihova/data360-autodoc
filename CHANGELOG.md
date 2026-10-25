@@ -18,6 +18,14 @@ semantic versioning.
   Mermaid). Uses mermaid-cli (`mmdc`) if installed; otherwise a warning with
   the install command, and the rest of the docs are written as usual.
 
+### Changed
+- `--format all` (the default) writes Markdown, Mermaid and JSON without the
+  "PDF output is not yet implemented" line; PDF stays available only as
+  `--format pdf` (still a stub).
+- With `--target-org` and no `--org-name`, the document and its files are named
+  after the alias (`my-org.md`) instead of the org's host name.
+- README quick start mentions `pipx ensurepath` for first-time pipx users.
+
 ## [0.4.0] - 2026-10-22
 
 ### Added

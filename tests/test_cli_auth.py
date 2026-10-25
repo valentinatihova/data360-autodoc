@@ -277,6 +277,25 @@ def test_strict_failure_writes_nothing(tmp_path: Path, monkeypatch) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+def test_target_org_alias_is_the_default_name(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--target-org", "acme")
+    assert result.exit_code == 0, result.output
+    assert _offline["org_name"] == "acme"
+    assert (tmp_path / "acme.json").exists()
+
+
+def test_org_name_beats_the_alias(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--target-org", "acme", "--org-name", "Acme Prod")
+    assert result.exit_code == 0, result.output
+    assert _offline["org_name"] == "Acme Prod"
+
+
+def test_token_mode_keeps_the_host_default(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--instance-url", URL, "--access-token", "T")
+    assert result.exit_code == 0, result.output
+    assert _offline["org_name"] is None  # fetch_metadata falls back to the host
+
+
 def test_diagram_image_is_written_and_listed(tmp_path: Path, monkeypatch) -> None:
     def fake_render(mmd_path, fmt):
         out = mmd_path.with_suffix(f".{fmt}")
