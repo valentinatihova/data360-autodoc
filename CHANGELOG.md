@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Added
+- `generate --strict`: fail and write nothing if any DMO could not be read,
+  instead of a partial snapshot that `diff` would report as "DMO removed".
+- README "Run drift checks in CI" recipe; the example GitHub Actions workflow
+  now signs in with `sf org login jwt` + `--target-org`, uses a stable snapshot
+  name (`--org-name`), `--strict`, and also runs on pull requests that change
+  the baseline (skipped for forks, which get no secrets).
+
 ## [0.4.0] - 2026-10-22
 
 ### Added
