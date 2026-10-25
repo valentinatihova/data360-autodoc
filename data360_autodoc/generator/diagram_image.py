@@ -21,6 +21,10 @@ MMDC_TIMEOUT_SECONDS: Final = 180
 
 INSTALL_HINT: Final = "npm install --global @mermaid-js/mermaid-cli"
 
+#: PNG pixel scale. mmdc renders 800 px wide by default, which makes the labels
+#: of a wide DLO → DMO graph unreadable; SVG is vector and needs no scale.
+PNG_SCALE: Final = 3
+
 
 class DiagramImageError(RuntimeError):
     """The image could not be drawn; the message says why and what to do."""
@@ -39,9 +43,12 @@ def render_diagram_image(mmd_path: Path, image_format: str) -> Path:
             f"Install it with `{INSTALL_HINT}` and run again."
         )
     out_path = mmd_path.with_suffix(f".{image_format}")
+    args = [mmdc, "-i", str(mmd_path), "-o", str(out_path), "-b", "white"]
+    if image_format == "png":
+        args += ["-s", str(PNG_SCALE)]
     try:
         completed = subprocess.run(
-            [mmdc, "-i", str(mmd_path), "-o", str(out_path), "-b", "white"],
+            args,
             capture_output=True,
             text=True,
             timeout=MMDC_TIMEOUT_SECONDS,

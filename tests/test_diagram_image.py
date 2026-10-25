@@ -38,6 +38,8 @@ def test_draws_next_to_the_mmd(monkeypatch, mmd: Path, fmt: str) -> None:
     assert out == mmd.with_suffix(f".{fmt}")
     assert out.exists()
     assert calls[0][:5] == ["/usr/local/bin/mmdc", "-i", str(mmd), "-o", str(out)]
+    # Only PNG is scaled up; SVG is vector.
+    assert ("-s" in calls[0]) == (fmt == "png")
 
 
 def test_missing_mmdc_gives_install_hint(monkeypatch, mmd: Path) -> None:
