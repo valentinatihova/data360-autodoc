@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Changed
+- README opens with a short terminal demo GIF of `generate --target-org`
+  (a real run, the wait sped up 30×).
+
 ## [0.4.1] - 2026-10-25
 
 ### Added
