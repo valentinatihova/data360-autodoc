@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [Unreleased]
+## [0.4.1] - 2026-10-25
 
 ### Added
 - `generate --strict`: fail and write nothing if any DMO could not be read,
