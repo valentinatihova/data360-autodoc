@@ -275,3 +275,22 @@ def test_strict_failure_writes_nothing(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 1
     assert "no snapshot written" in result.output + result.stderr
     assert list(tmp_path.iterdir()) == []
+
+
+def test_target_org_alias_is_the_default_name(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--target-org", "acme")
+    assert result.exit_code == 0, result.output
+    assert _offline["org_name"] == "acme"
+    assert (tmp_path / "acme.json").exists()
+
+
+def test_org_name_beats_the_alias(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--target-org", "acme", "--org-name", "Acme Prod")
+    assert result.exit_code == 0, result.output
+    assert _offline["org_name"] == "Acme Prod"
+
+
+def test_token_mode_keeps_the_host_default(tmp_path: Path, _offline: dict) -> None:
+    result = _generate(tmp_path, "--instance-url", URL, "--access-token", "T")
+    assert result.exit_code == 0, result.output
+    assert _offline["org_name"] is None  # fetch_metadata falls back to the host
