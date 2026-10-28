@@ -38,7 +38,11 @@ from data360_autodoc.models import (
     OrgSchema,
     Relationship,
 )
-from data360_autodoc.fetcher.streams import StreamsError, fetch_dlos_and_streams
+from data360_autodoc.fetcher.streams import (
+    StreamsError,
+    fetch_dlos_and_streams,
+    fetch_unstreamed_dlos,
+)
 
 #: DMO field types that carry no real type information; safe to override with a
 #: type inferred from the mapped DLO field (see :func:`_enrich_dmo_field_types`).
@@ -189,6 +193,13 @@ def fetch_metadata(
             instance_url=instance_url,
             access_token=access_token,
             api_version=api_version,
+            timeout=timeout,
+        )
+        dlos += fetch_unstreamed_dlos(
+            instance_url=instance_url,
+            access_token=access_token,
+            api_version=api_version,
+            known={d.name for d in dlos},
             timeout=timeout,
         )
         # DLO field metadata only becomes available after the streams fetch, so
@@ -461,18 +472,68 @@ def _cardinality(raw: Any) -> str | None:
 
 
 def _merge_dmo_fields(
-    typed: dict[str, FieldDef], mapping_fields: list[FieldDef]
+    typed: dict[str, FieldDef],
+    mapping_fields: list[FieldDef],
+    described: dict[str, FieldDef] | None = None,
 ) -> tuple[FieldDef, ...]:
-    """Merge relationship-typed fields with mapping-derived names, sorted.
+    """Merge described, relationship-typed and mapping-derived fields, sorted.
 
-    Relationship fields (real types) win; mapping target fields fill in any
-    field that has DLO data mapped but no relationship (kept as ``Unknown``).
+    Described fields (the DMO's own definition: real types and keys) win;
+    relationship fields beat mapping target fields (kept as ``Unknown``).
     Sorting preserves the deterministic-output guarantee.
     """
-    merged = dict(typed)
-    for fd in mapping_fields:
+    merged = dict(described or {})
+    for fd in [*typed.values(), *mapping_fields]:
         merged.setdefault(fd.name, fd)
     return tuple(sorted(merged.values(), key=lambda fd: fd.name.lower()))
+
+
+def _fetch_dmo_fields(
+    base: str,
+    api_version: str,
+    dataspace: str,
+    dmo_name: str,
+    access_token: str,
+    timeout: float,
+) -> dict[str, FieldDef]:
+    """The DMO's key and model fields from its own definition.
+
+    Keeps primary-key and key-qualifier fields, custom fields and fields with
+    data mapped; the hundreds of unused standard fields would bury the model.
+    Not fatal: on any error (except 401) the DMO keeps the fields that its
+    mappings and relationships give, without key information.
+    """
+    url = (
+        f"{base}/services/data/{api_version}/ssot/data-model-objects/"
+        f"{dmo_name}?{urlencode({'dataspace': dataspace})}"
+    )
+    try:
+        body = get_json(url, access_token=access_token, timeout=timeout)
+    except UnauthorizedError:
+        raise
+    except FetchError as exc:
+        logger.warning("No key information for DMO %s: %s", dmo_name, exc)
+        return {}
+    out: dict[str, FieldDef] = {}
+    for f in body.get("fields") or []:
+        if not isinstance(f, dict) or not isinstance(f.get("name"), str):
+            continue
+        is_key = f.get("isPrimaryKey") is True
+        qualifier = f.get("keyQualifierName") or None
+        if not (
+            is_key
+            or qualifier
+            or f.get("isMapped") is True
+            or f.get("creationType") == "Custom"
+        ):
+            continue
+        out[f["name"]] = FieldDef(
+            name=f["name"],
+            type=f.get("type") or "Unknown",
+            is_key=is_key,
+            key_qualifier=qualifier,
+        )
+    return out
 
 
 def _fetch_dmo_details(
@@ -517,6 +578,9 @@ def _fetch_dmo_details(
             typed_fields, dmo_rels = _fetch_dmo_relationships(
                 base, api_version, dataspace, dmo_name, access_token, timeout
             )
+            described = _fetch_dmo_fields(
+                base, api_version, dataspace, dmo_name, access_token, timeout
+            )
         except UnauthorizedError:
             raise  # not this DMO's fault: the whole run must stop
         except FetchError as exc:
@@ -553,7 +617,7 @@ def _fetch_dmo_details(
             DataModelObject(
                 name=dmo_name,
                 label=label,
-                fields=_merge_dmo_fields(typed_fields, mapping_fields),
+                fields=_merge_dmo_fields(typed_fields, mapping_fields, described),
             )
         )
     if progress and total:

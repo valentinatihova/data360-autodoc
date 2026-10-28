@@ -13,7 +13,7 @@ import shutil
 import subprocess
 from typing import Final
 
-#: How long ``sf org display`` may take (it can refresh the session first).
+#: How long one ``sf`` call may take (it can refresh the session first).
 SF_TIMEOUT_SECONDS: Final = 60
 
 
@@ -34,9 +34,29 @@ def org_credentials(alias: str) -> tuple[str, str]:
             "https://developer.salesforce.com/tools/salesforcecli, then run "
             f"`sf org login web --alias {alias}`."
         )
+    code, body = _run(sf, ["org", "display", "--target-org", alias, "--json"])
+    result = _result(body)
+    url, token = result.get("instanceUrl"), result.get("accessToken")
+    if code == 0 and url and (not token or token.startswith("[REDACTED")):
+        # Newer sf redacts the token in `org display`; it has its own command.
+        code, body = _run(
+            sf, ["org", "auth", "show-access-token", "--target-org", alias, "--json"]
+        )
+        token = _result(body).get("accessToken")
+    if code != 0 or not url or not token or token.startswith("[REDACTED"):
+        reason = body.get("message") or "no access token in its output"
+        raise SfCliError(
+            f"sf could not provide a session for '{alias}': {reason} "
+            f"Run `sf org login web --alias {alias}`."
+        )
+    return url, token
+
+
+def _run(sf: str, args: list[str]) -> tuple[int, dict]:
+    """Run ``sf ARGS`` and return ``(exit code, parsed JSON body)``."""
     try:
         completed = subprocess.run(
-            [sf, "org", "display", "--target-org", alias, "--json"],
+            [sf, *args],
             capture_output=True,
             text=True,
             timeout=SF_TIMEOUT_SECONDS,
@@ -44,23 +64,16 @@ def org_credentials(alias: str) -> tuple[str, str]:
         )
     except subprocess.TimeoutExpired as exc:
         raise SfCliError(
-            f"`sf org display` did not answer within {SF_TIMEOUT_SECONDS} s."
+            f"`sf {' '.join(args[:2])}` did not answer within {SF_TIMEOUT_SECONDS} s."
         ) from exc
     except OSError as exc:
         raise SfCliError(f"Could not run sf: {exc.strerror or exc}") from exc
+    return completed.returncode, _parse_json(completed.stdout)
 
-    body = _parse_json(completed.stdout)
+
+def _result(body: dict) -> dict:
     result = body.get("result")
-    if not isinstance(result, dict):
-        result = {}
-    url, token = result.get("instanceUrl"), result.get("accessToken")
-    if completed.returncode != 0 or not url or not token:
-        reason = body.get("message") or "no access token in its output"
-        raise SfCliError(
-            f"sf could not provide a session for '{alias}': {reason} "
-            f"Run `sf org login web --alias {alias}`."
-        )
-    return url, token
+    return result if isinstance(result, dict) else {}
 
 
 def _parse_json(stdout: str) -> dict:

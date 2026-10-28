@@ -6,6 +6,19 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+- `--target-org` works with current Salesforce CLI releases, which print the
+  access token as `[REDACTED]` in `sf org display`; the token now comes from
+  `sf org auth show-access-token` (older CLIs keep working as before).
+- DMO primary keys and key qualifiers are now read from each DMO's own
+  definition (`/ssot/data-model-objects/{name}`); before, the key column was
+  always empty for DMOs. DMO fields also include custom and key fields that
+  have no mapping yet (unused standard fields are still left out).
+- DLOs that no data stream feeds (for example the output DLOs of data
+  transforms) are now documented, from `/ssot/data-lake-objects`.
+
+Snapshots taken with 0.4.x will show the new keys and DLOs as drift once.
+
 ### Changed
 - README opens with a short terminal demo GIF of `generate --target-org`
   (a real run, the wait sped up 30×).
