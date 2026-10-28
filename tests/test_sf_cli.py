@@ -86,3 +86,47 @@ def test_token_never_appears_in_errors(monkeypatch) -> None:
     with pytest.raises(sf_cli.SfCliError) as exc:
         sf_cli.org_credentials("acme")
     assert TOKEN not in str(exc.value)
+
+
+def test_redacted_token_is_fetched_with_show_access_token(monkeypatch) -> None:
+    # sf 2.15x+ prints "[REDACTED] Use 'sf org auth show-access-token' to view".
+    display = {
+        "status": 0,
+        "result": {
+            "instanceUrl": "https://acme.my.salesforce.com",
+            "accessToken": "[REDACTED] Use 'sf org auth show-access-token' to view",
+        },
+    }
+    shown = {"status": 0, "result": {"accessToken": TOKEN}}
+    outputs = iter([json.dumps(display), json.dumps(shown)])
+    calls: list = []
+    monkeypatch.setattr(sf_cli.shutil, "which", lambda name: "/usr/local/bin/sf")
+
+    def fake_run(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout=next(outputs), stderr="")
+
+    monkeypatch.setattr(sf_cli.subprocess, "run", fake_run)
+    assert sf_cli.org_credentials("acme") == ("https://acme.my.salesforce.com", TOKEN)
+    assert calls[1] == [
+        "/usr/local/bin/sf",
+        "org",
+        "auth",
+        "show-access-token",
+        "--target-org",
+        "acme",
+        "--json",
+    ]
+
+
+def test_still_redacted_is_an_error_not_a_token(monkeypatch) -> None:
+    body = {
+        "status": 0,
+        "result": {
+            "instanceUrl": "https://acme.my.salesforce.com",
+            "accessToken": "[REDACTED] Use 'sf org auth show-access-token' to view",
+        },
+    }
+    _sf(monkeypatch, stdout=json.dumps(body))
+    with pytest.raises(sf_cli.SfCliError, match="no access token"):
+        sf_cli.org_credentials("acme")

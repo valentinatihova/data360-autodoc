@@ -481,7 +481,9 @@ def test_dmo_list_stops_when_offset_is_ignored(monkeypatch) -> None:
 
     assert [d.name for d in schema.dmos] == ["A__dmo"]
     dmo_list_calls = [
-        c for c in responses.calls if c.request.url.split("?")[0].endswith("objects")
+        c
+        for c in responses.calls
+        if c.request.url.split("?")[0].endswith("data-model-objects")
     ]
     assert len(dmo_list_calls) == 2  # page 2 repeated page 1 -> stop
 
@@ -618,3 +620,84 @@ def test_dmo_without_mappings_404_is_kept_not_skipped() -> None:
 
     assert [d.name for d in schema.dmos] == ["Mine__dlm"]
     assert schema.mappings == ()
+
+
+@responses.activate
+def test_dmo_keys_from_definition_and_dlos_outside_streams() -> None:
+    _dmo_page(0, {"name": "Individual__dlm", "isEnabled": True})
+    _empty_details("Individual__dlm")
+    responses.replace(
+        responses.GET,
+        f"{SSOT}/data-streams",
+        json={
+            "dataStreams": [
+                {
+                    "dataLakeObjectInfo": {
+                        "name": "Contact_Home__dll",
+                        "label": "Contact",
+                    }
+                }
+            ]
+        },
+    )
+    responses.add(
+        responses.GET,
+        f"{SSOT}/data-model-objects/Individual__dlm",
+        json={
+            "fields": [
+                {
+                    "name": "ssot__Id__c",
+                    "type": "Text",
+                    "isPrimaryKey": True,
+                    "keyQualifierName": "KQ_Id",
+                },
+                {"name": "ssot__FirstName__c", "type": "Text", "isMapped": True},
+                {"name": "Segment__c", "type": "Number", "creationType": "Custom"},
+                {"name": "ssot__Unused__c", "type": "Text", "creationType": "Standard"},
+            ]
+        },
+    )
+    responses.add(
+        responses.GET,
+        f"{SSOT}/data-lake-objects",
+        json={
+            "dataLakeObjects": [
+                {"name": "Contact_Home__dll", "label": "Contact", "fields": []},
+                {
+                    "name": "Customer_T__dll",
+                    "label": "Customer (transform)",
+                    "fields": [
+                        {"name": "Id__c", "dataType": "Text", "isPrimaryKey": True}
+                    ],
+                },
+            ]
+        },
+    )
+
+    schema = _fetch()
+
+    (dmo,) = schema.dmos
+    by_name = {f.name: f for f in dmo.fields}
+    assert set(by_name) == {"ssot__Id__c", "ssot__FirstName__c", "Segment__c"}
+    assert by_name["ssot__Id__c"].is_key is True
+    assert by_name["ssot__Id__c"].key_qualifier == "KQ_Id"
+    assert by_name["Segment__c"].type == "Number"
+    assert sorted(d.name for d in schema.dlos) == [
+        "Contact_Home__dll",
+        "Customer_T__dll",
+    ]
+    (transform,) = [d for d in schema.dlos if d.name == "Customer_T__dll"]
+    assert transform.fields[0].is_key is True
+
+
+@responses.activate
+def test_missing_dmo_definition_and_dlo_list_are_not_fatal() -> None:
+    _dmo_page(0, {"name": "A__dlm", "isEnabled": True})
+    _empty_details("A__dlm")
+    responses.add(responses.GET, f"{SSOT}/data-model-objects/A__dlm", status=404)
+    responses.add(responses.GET, f"{SSOT}/data-lake-objects", status=500)
+
+    schema = _fetch()
+
+    assert [d.name for d in schema.dmos] == ["A__dlm"]
+    assert schema.dlos == ()

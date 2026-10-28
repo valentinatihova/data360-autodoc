@@ -9,10 +9,13 @@ See ``agent_docs/api_reference.md`` for the verified response shape.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from data360_autodoc.fetcher._http import FetchError, UnauthorizedError, iter_pages
 from data360_autodoc.models import DataLakeObject, DataStream, FieldDef, FieldMapping
+
+logger = logging.getLogger(__name__)
 
 #: Connector-name lookup order, shared by stream + field-mapping rows.
 _CONNECTOR_KEYS = ("connectorName", "name", "label", "displayName", "connectorType")
@@ -47,6 +50,45 @@ def fetch_dlos_and_streams(
         tuple(_parse_stream(s) for s in raw),
         _build_field_mappings(raw),
     )
+
+
+def fetch_unstreamed_dlos(
+    *,
+    instance_url: str,
+    access_token: str,
+    api_version: str,
+    known: set[str],
+    timeout: float = 60.0,
+) -> tuple[DataLakeObject, ...]:
+    """DLOs that no data stream feeds, e.g. the output DLOs of data transforms.
+
+    ``/ssot/data-lake-objects`` lists every DLO; the ones in ``known`` (already
+    built from the streams) are skipped. Not fatal: on any error (except 401)
+    the document keeps the stream DLOs only.
+    """
+    base = instance_url.rstrip("/")
+    first_url = f"{base}/services/data/{api_version}/ssot/data-lake-objects?limit=100"
+    out: dict[str, DataLakeObject] = {}
+    try:
+        for page in iter_pages(
+            first_url, base_url=base, access_token=access_token, timeout=timeout
+        ):
+            for dlo in page.get("dataLakeObjects", []):
+                if not isinstance(dlo, dict):
+                    continue
+                name = dlo.get("name")
+                if not name or name in known or name in out:
+                    continue
+                fields = dlo.get("fields") or dlo.get("dataLakeFieldInfoRepresentation")
+                out[name] = _parse_dlo(
+                    {**dlo, "dataLakeFieldInfoRepresentation": fields}
+                )
+    except UnauthorizedError:
+        raise
+    except FetchError as exc:
+        logger.warning("Could not list DLOs outside data streams: %s", exc)
+        return ()
+    return tuple(out.values())
 
 
 def _iter_raw_streams(
