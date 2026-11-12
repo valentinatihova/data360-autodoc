@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-12
+
 ### Fixed
 - `--target-org` works with current Salesforce CLI releases, which print the
   access token as `[REDACTED]` in `sf org display`; the token now comes from

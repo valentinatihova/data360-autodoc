@@ -252,7 +252,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: |
-          pip install "data360-autodoc>=0.4.1,<0.5"
+          pip install "data360-autodoc>=0.4.2,<0.5"
           npm install --global @salesforce/cli@2
       - name: Sign in (JWT, secrets from the repo settings)
         env:
